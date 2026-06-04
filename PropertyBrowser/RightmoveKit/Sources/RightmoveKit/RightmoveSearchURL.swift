@@ -24,6 +24,34 @@ public struct RightmoveSearchURL: Equatable {
         self.queryItems = components.queryItems ?? []
     }
 
+    /// Builds a for-sale search URL from the structured form criteria. Only
+    /// fields that are set are emitted, so the query string stays minimal.
+    /// Returns nil if no location has been chosen.
+    public init?(criteria: RightmoveSearchCriteria) {
+        guard criteria.hasLocation else { return nil }
+        self.base = Self.defaultBase
+
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "locationIdentifier", value: criteria.locationIdentifier),
+            URLQueryItem(name: "radius", value: criteria.radius.rawValue),
+        ]
+        if let beds = criteria.minBedrooms, !beds.isEmpty {
+            items.append(URLQueryItem(name: "minBedrooms", value: beds))
+        }
+        if let min = criteria.minPrice, !min.isEmpty {
+            items.append(URLQueryItem(name: "minPrice", value: min))
+        }
+        if let max = criteria.maxPrice, !max.isEmpty {
+            items.append(URLQueryItem(name: "maxPrice", value: max))
+        }
+        if !criteria.propertyTypes.isEmpty {
+            // Rightmove takes a single comma-separated propertyTypes parameter.
+            let joined = criteria.propertyTypes.map(\.rawValue).joined(separator: ",")
+            items.append(URLQueryItem(name: "propertyTypes", value: joined))
+        }
+        self.queryItems = items
+    }
+
     public var locationIdentifier: String? { value(for: "locationIdentifier") }
     public var searchLocation: String? { value(for: "searchLocation") }
     public var radius: String? { value(for: "radius") }

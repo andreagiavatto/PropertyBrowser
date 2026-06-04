@@ -16,6 +16,13 @@ struct PropertyDetailView: View {
     @State private var isLoading = true
     @State private var error: String?
 
+    // New state
+    @StateObject private var stationService = StationProximityService()
+    @State private var floorArea: FloorArea?
+    @State private var isLoadingFloorArea = false
+    @State private var renderedDescription: AttributedString?
+    @State private var descriptionExpanded = false
+
     private var pin: PinnedProperty? { pins.first { $0.propertyID == propertyID } }
     private var isPinned: Bool { pin != nil }
 
@@ -33,7 +40,7 @@ struct PropertyDetailView: View {
                 )
             }
         }
-        .navigationTitle(Format.oneLine(detail?.address?.displayAddress) )
+        .navigationTitle(Format.oneLine(detail?.address?.displayAddress))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: togglePin) {
@@ -44,13 +51,18 @@ struct PropertyDetailView: View {
         .task(id: propertyID) { await load() }
     }
 
+    // MARK: - Main content
+
     @ViewBuilder
     private func content(_ d: PropertyDetail) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+
+                // 1. Gallery
                 gallery(d)
 
-                VStack(alignment: .leading, spacing: 8) {
+                // 2. Price + reduction badge + status
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(d.prices?.primaryPrice ?? "Price on application")
                             .font(.largeTitle.bold())
@@ -60,31 +72,24 @@ struct PropertyDetailView: View {
                         Spacer()
                         StatusBadge(state: d.listingState)
                     }
+                    if let badge = reductionBadge {
+                        Text(badge)
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                    }
+
+                    // 3. Address
                     Text(Format.oneLine(d.address?.displayAddress))
                         .font(.title3).foregroundStyle(.secondary)
+
+                    // 4. Facts row
                     factsRow(d)
                 }
 
-                if isPinned, let pin { priceHistory(pin) }
+                // 5. Verdict checklist
+                verdictChecklist(d)
 
-                if let features = d.keyFeatures, !features.isEmpty {
-                    section("Key features") {
-                        ForEach(features, id: \.self) { f in
-                            Label(f, systemImage: "checkmark.circle").font(.callout)
-                        }
-                    }
-                }
-
-                if let desc = d.text?.description, !desc.isEmpty {
-                    section("Description") {
-                        Text(desc).font(.callout).textSelection(.enabled)
-                    }
-                }
-
-                if let lat = d.location?.lat, let lng = d.location?.lng {
-                    section("Location") { mapView(lat: lat, lng: lng, title: Format.oneLine(d.address?.displayAddress)) }
-                }
-
+                // 6. Floorplan
                 if let floor = d.floorplans?.first?.url, let url = URL(string: floor) {
                     section("Floorplan") {
                         AsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fit) }
@@ -93,6 +98,40 @@ struct PropertyDetailView: View {
                     }
                 }
 
+                // 7 + 8. Map with station pins + nearest stations list
+                if let lat = d.location?.lat, let lng = d.location?.lng {
+                    section("Location") {
+                        stationMap(lat: lat, lng: lng, title: Format.oneLine(d.address?.displayAddress))
+                    }
+                    if !stationService.stations.isEmpty || stationService.isLoading {
+                        section("Nearest stations") { stationList() }
+                    }
+                }
+
+                // 9. Listing age + update reason
+                listingAgeLine(d)
+
+                // 10. Price history chart
+                if isPinned, let pin { priceHistory(pin) }
+
+                // 11. Key features
+                if let features = d.keyFeatures, !features.isEmpty {
+                    section("Key features") {
+                        ForEach(features, id: \.self) { f in
+                            Label(f, systemImage: "checkmark.circle").font(.callout)
+                        }
+                    }
+                }
+
+                // 12. Description (HTML, collapsed)
+                if renderedDescription != nil || d.text?.description?.isEmpty == false {
+                    descriptionSection(d)
+                }
+
+                // 13. Lease / service charge
+                leaseSection(d)
+
+                // 14. View on Rightmove
                 if let url = rightmoveURL(forID: propertyID) {
                     Link(destination: url) {
                         Label("View on Rightmove", systemImage: "safari")
@@ -104,7 +143,7 @@ struct PropertyDetailView: View {
         }
     }
 
-    // MARK: Sections
+    // MARK: - Gallery
 
     @ViewBuilder
     private func gallery(_ d: PropertyDetail) -> some View {
@@ -128,17 +167,200 @@ struct PropertyDetailView: View {
         }
     }
 
+    // MARK: - Facts row
+
     @ViewBuilder
     private func factsRow(_ d: PropertyDetail) -> some View {
         HStack(spacing: 18) {
-            if let beds = d.bedrooms?.int { Label("\(beds) bed", systemImage: "bed.double") }
-            if let baths = d.bathrooms?.int { Label("\(baths) bath", systemImage: "shower") }
-            if let type = d.propertySubType { Label(type, systemImage: "house") }
+            if let beds = d.bedrooms?.int   { Label("\(beds) bed",   systemImage: "bed.double") }
+            if let baths = d.bathrooms?.int  { Label("\(baths) bath", systemImage: "shower") }
+            if let type = d.propertySubType  { Label(type,            systemImage: "house") }
             if let tenure = d.tenure?.tenureType { Label(tenure.capitalized, systemImage: "doc.text") }
+            if isLoadingFloorArea {
+                Label("Calculating area…", systemImage: "ruler")
+                    .redacted(reason: .placeholder)
+            } else if let area = floorArea {
+                Label(area.formatted, systemImage: "ruler")
+                if let price = pin?.currentPriceAmount ?? d.prices?.parsedAmount,
+                   area.sqm > 0 {
+                    let ppm2 = Int((Double(price) / area.sqm).rounded())
+                    Label("£\(Format.thousands(ppm2))/m²", systemImage: "sterlingsign.square")
+                }
+            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)
     }
+
+    // MARK: - Verdict checklist
+
+    @ViewBuilder
+    private func verdictChecklist(_ d: PropertyDetail) -> some View {
+        let hasFloorplan    = !(d.floorplans ?? []).isEmpty
+        let hasArea         = floorArea != nil && floorArea?.isApproximate == false
+        let stationNearby   = stationService.stations.first?.isWithin500m == true
+
+        HStack(spacing: 16) {
+            VerdictDot(label: "Floorplan",   met: hasFloorplan)
+            VerdictDot(label: "Area known",  met: hasArea)
+            VerdictDot(label: "Station ≤500m", met: stationNearby,
+                       loading: stationService.isLoading && stationService.stations.isEmpty)
+        }
+        .font(.footnote)
+    }
+
+    // MARK: - Map + station overlays
+
+    @ViewBuilder
+    private func stationMap(lat: Double, lng: Double, title: String) -> some View {
+        let propertyCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        Map(initialPosition: .region(MKCoordinateRegion(
+            center: propertyCoord,
+            latitudinalMeters: 1400,
+            longitudinalMeters: 1400
+        ))) {
+            // Property marker
+            Marker(title, coordinate: propertyCoord)
+                .tint(.red)
+
+            // Walk-distance lines (separate ForEach — @MapContentBuilder
+            // can't mix Marker + MapPolyline in the same iteration)
+            ForEach(stationService.stations) { station in
+                MapPolyline(coordinates: [propertyCoord, station.coordinate])
+                    .stroke(.blue.opacity(0.55), lineWidth: 2)
+            }
+
+            // Station markers — label shows walking time · distance once resolved
+            ForEach(stationService.stations) { station in
+                Marker(
+                    stationMarkerLabel(station),
+                    systemImage: "tram.fill",
+                    coordinate: station.coordinate
+                )
+                .tint(.blue)
+            }
+        }
+        .frame(height: 300)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(alignment: .bottomTrailing) {
+            if stationService.isLoading && stationService.stations.isEmpty {
+                ProgressView()
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(8)
+            }
+        }
+    }
+
+    /// Pin label: station name, plus "time · distance" once the walk is resolved.
+    private func stationMarkerLabel(_ station: NearbyStation) -> String {
+        if let info = station.formattedDistanceAndDuration {
+            return "\(station.name)\n\(info)"
+        }
+        return station.name
+    }
+
+    // MARK: - Station list
+
+    @ViewBuilder
+    private func stationList() -> some View {
+        VStack(spacing: 6) {
+            ForEach(stationService.stations) { station in
+                HStack {
+                    Image(systemName: "tram.fill").foregroundStyle(.blue)
+                    Text(station.name).font(.callout)
+                    Spacer()
+                    if let info = station.formattedDistanceAndDuration {
+                        Text(info)
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ProgressView().scaleEffect(0.7)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Listing age
+
+    @ViewBuilder
+    private func listingAgeLine(_ d: PropertyDetail) -> some View {
+        if let date = d.listingAddedDate {
+            let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+            let ageText: String = {
+                if days == 0 { return "Added today" }
+                if days == 1 { return "Added yesterday" }
+                return "Added \(days) days ago"
+            }()
+            // Only append the update reason when it's a change (Reduced / Increased),
+            // not when it just repeats "Added on …".
+            let verb = d.listingHistory?.verb?.lowercased() ?? ""
+            let showUpdate = !verb.isEmpty && verb != "added"
+            let updateText = showUpdate ? (d.listingHistory?.listingUpdateReason.map { " · \($0)" } ?? "") : ""
+            Text(ageText + updateText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Description (HTML, collapsed)
+
+    @ViewBuilder
+    private func descriptionSection(_ d: PropertyDetail) -> some View {
+        section("Description") {
+            if let attr = renderedDescription {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(attr)
+                        .font(.callout)
+                        .lineLimit(descriptionExpanded ? nil : 5)
+                        .textSelection(.enabled)
+                    Button(descriptionExpanded ? "Show less" : "Show more") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            descriptionExpanded.toggle()
+                        }
+                    }
+                    .font(.callout)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                }
+            } else if let raw = d.text?.description, !raw.isEmpty {
+                // Fallback while attributed string is being built (or if it fails)
+                Text(raw)
+                    .font(.callout)
+                    .lineLimit(descriptionExpanded ? nil : 5)
+                    .textSelection(.enabled)
+                Button(descriptionExpanded ? "Show less" : "Show more") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        descriptionExpanded.toggle()
+                    }
+                }
+                .font(.callout)
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
+            }
+        }
+    }
+
+    // MARK: - Lease / service charge
+
+    @ViewBuilder
+    private func leaseSection(_ d: PropertyDetail) -> some View {
+        let leaseTerms = (d.keyFeatures ?? []).filter { feature in
+            let lower = feature.lowercased()
+            return lower.contains("lease") || lower.contains("ground rent")
+                || lower.contains("service charge") || lower.contains("maintenance")
+        }
+        if !leaseTerms.isEmpty {
+            section("Lease & charges") {
+                ForEach(leaseTerms, id: \.self) { term in
+                    Label(term, systemImage: "doc.plaintext").font(.callout)
+                }
+            }
+        }
+    }
+
+    // MARK: - Price history
 
     @ViewBuilder
     private func priceHistory(_ pin: PinnedProperty) -> some View {
@@ -155,18 +377,26 @@ struct PropertyDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func mapView(lat: Double, lng: Double, title: String) -> some View {
-        let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        Map(initialPosition: .region(MKCoordinateRegion(
-            center: coord,
-            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        ))) {
-            Marker(title, coordinate: coord)
+    // MARK: - Price reduction badge
+
+    private var reductionBadge: String? {
+        guard let pin else { return nil }
+        let reductions = pin.events.filter { $0.isPriceReduction }
+        guard !reductions.isEmpty else { return nil }
+        let firstPrice = pin.events
+            .filter { $0.kind == .firstSeen || $0.kind == .priceChange }
+            .sorted { $0.date < $1.date }
+            .first?.toAmount
+        let currentPrice = pin.currentPriceAmount
+        var totalDrop = ""
+        if let first = firstPrice, let current = currentPrice, first > current {
+            totalDrop = " −£\(Format.thousands(first - current))"
         }
-        .frame(height: 280)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        let count = reductions.count
+        return "Reduced \(count)×\(totalDrop)"
     }
+
+    // MARK: - Section helper
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -176,7 +406,7 @@ struct PropertyDetailView: View {
         }
     }
 
-    // MARK: Data
+    // MARK: - Data helpers
 
     private struct PricePoint: Identifiable {
         let id = UUID()
@@ -191,20 +421,59 @@ struct PropertyDetailView: View {
             .compactMap { e in (e.toAmount).map { PricePoint(date: e.date, amount: $0) } }
     }
 
+    // MARK: - Load
+
     private func load() async {
         isLoading = true
         error = nil
+        detail = nil
+        floorArea = nil
+        renderedDescription = nil
+
         do {
-            detail = try await model.client.fetchPropertyDetail(id: propertyID)
-            // If pinned, fold this fresh fetch into the history.
-            if isPinned, let d = detail, let snap = TrackedSnapshot(detail: d) {
+            let d = try await model.client.fetchPropertyDetail(id: propertyID)
+            detail = d
+            isLoading = false   // Show the page immediately
+
+            if isPinned, let snap = TrackedSnapshot(detail: d) {
                 TrackingStore(context: context).apply(snap)
             }
+
+            // HTML description: synchronous on MainActor, fast
+            if let html = d.text?.description, !html.isEmpty {
+                renderedDescription = html.htmlToAttributedString()
+            }
+
+            // Floor area + station search: run concurrently
+            isLoadingFloorArea = true
+            let floorURL = d.floorplans?.first?.url.flatMap(URL.init(string:))
+            let price    = d.prices?.parsedAmount
+            let ppsf     = d.prices?.pricePerSqFt
+
+            if let lat = d.location?.lat, let lng = d.location?.lng {
+                let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+                async let areaResult  = FloorplanAnalyser.extract(
+                    floorplanURL: floorURL,
+                    totalPriceGBP: price,
+                    pricePerSqFtString: ppsf
+                )
+                async let stationTask: Void = stationService.load(near: coord)
+                let (area, _) = await (areaResult, stationTask)
+                floorArea = area
+            } else {
+                floorArea = await FloorplanAnalyser.extract(
+                    floorplanURL: floorURL,
+                    totalPriceGBP: price,
+                    pricePerSqFtString: ppsf
+                )
+            }
+            isLoadingFloorArea = false
+
         } catch {
             self.error = "\(error)"
-            detail = nil
+            isLoading = false
+            isLoadingFloorArea = false
         }
-        isLoading = false
     }
 
     private func togglePin() {
@@ -216,3 +485,54 @@ struct PropertyDetailView: View {
         }
     }
 }
+
+// MARK: - Verdict dot
+
+private struct VerdictDot: View {
+    let label: String
+    let met: Bool
+    var loading: Bool = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if loading {
+                ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+            } else {
+                Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(met ? .green : .secondary)
+            }
+            Text(label)
+        }
+    }
+}
+
+// MARK: - Helpers
+
+extension String {
+    /// Convert an HTML string to an AttributedString using AppKit.
+    /// Must be called on the main thread.
+    @MainActor
+    func htmlToAttributedString() -> AttributedString? {
+        guard let data = data(using: .utf8) else { return nil }
+        guard let ns = try? NSAttributedString(
+            data: data,
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
+            documentAttributes: nil
+        ) else { return nil }
+        return try? AttributedString(ns, including: \.appKit)
+    }
+}
+
+extension DetailPrices {
+    /// Parse the primary price string into an Int amount.
+    var parsedAmount: Int? {
+        guard let s = primaryPrice else { return nil }
+        let digits = s.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
+    }
+}
+
+

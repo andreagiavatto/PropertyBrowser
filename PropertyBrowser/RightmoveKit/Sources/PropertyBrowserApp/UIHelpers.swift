@@ -37,6 +37,13 @@ enum Format {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    static func thousands(_ n: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
     static func relative(_ date: Date?) -> String {
         guard let date else { return "—" }
         let f = RelativeDateTimeFormatter()

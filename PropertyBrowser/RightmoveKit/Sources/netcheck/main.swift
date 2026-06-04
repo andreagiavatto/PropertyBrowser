@@ -24,6 +24,7 @@ func usage() -> Never {
       netcheck <url> [more urls ...]
       netcheck --search "<pasted search url>"
       netcheck --property <id>
+      netcheck --typeahead "<area name>"
       netcheck --cookie "<cookie header>" <any of the above>
     """
     FileHandle.standardError.write(Data((text + "\n").utf8))
@@ -37,6 +38,7 @@ guard !args.isEmpty else { usage() }
 var cookie: String?
 var searchURLString: String?
 var propertyID: Int?
+var typeAheadQuery: String?
 var rawURLs: [String] = []
 
 var i = 0
@@ -55,6 +57,10 @@ while i < args.count {
         i += 1
         guard i < args.count, let id = Int(args[i]) else { usage() }
         propertyID = id
+    case "--typeahead":
+        i += 1
+        guard i < args.count else { usage() }
+        typeAheadQuery = args[i]
     default:
         rawURLs.append(a)
     }
@@ -119,6 +125,27 @@ do {
         print("")
     }
 
+    // --typeahead: probe the location lookup endpoint and list matches
+    if let q = typeAheadQuery {
+        guard let url = RightmoveTypeAhead.url(for: q) else {
+            print("ERROR  could not build typeahead URL for: \(q)")
+            exit(1)
+        }
+        print("TYPEAHEAD  \(url.absoluteString)")
+        do {
+            let matches = try await client.fetchLocationSuggestions(query: q)
+            print("           \(matches.count) location(s):")
+            for m in matches.prefix(10) {
+                print("             \(m.locationIdentifier)  —  \(m.displayName)")
+            }
+            if matches.isEmpty { print("             (no matches)") }
+        } catch {
+            print("           lookup failed: \(error)")
+            hadFailure = true
+        }
+        print("")
+    }
+
     // raw URLs
     for raw in rawURLs {
         guard let url = URL(string: raw) else {
@@ -136,6 +163,6 @@ do {
     exit(1)
 }
 
-if rawURLs.isEmpty && searchURLString == nil && propertyID == nil { usage() }
+if rawURLs.isEmpty && searchURLString == nil && propertyID == nil && typeAheadQuery == nil { usage() }
 
 exit(hadFailure ? 1 : 0)

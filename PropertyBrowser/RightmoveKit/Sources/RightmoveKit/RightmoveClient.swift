@@ -157,6 +157,49 @@ public actor RightmoveClient {
         return try RightmoveParser.parseSearchResults(html: html)
     }
 
+    /// Looks up locations matching `query` via Rightmove's typeahead endpoint,
+    /// returning the candidate places (each with its `locationIdentifier`).
+    /// Returns an empty array for a blank/unusable query. Throws
+    /// `RightmoveClientError` on a challenge or HTTP error so callers can
+    /// distinguish "no matches" from "lookup failed".
+    public func fetchLocationSuggestions(query: String) async throws -> [LocationSuggestion] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = RightmoveTypeAhead.url(for: trimmed) else { return [] }
+
+        try await throttle()
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(config.userAgent, forHTTPHeaderField: "User-Agent")
+        // Accept: application/json is required — the endpoint defaults to XML
+        // for a browser-style Accept. Referer is required or it 404s.
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(config.acceptLanguage, forHTTPHeaderField: "Accept-Language")
+        request.setValue("https://www.rightmove.co.uk/", forHTTPHeaderField: "Referer")
+        if let cookie = config.cookie {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw RightmoveClientError.notHTTP }
+        let status = http.statusCode
+        let body = String(decoding: data, as: UTF8.self)
+
+        // Challenge / bot-wall detection — but skip the tiny-body heuristic the
+        // page detector uses, since a JSON typeahead reply is legitimately small.
+        if status == 403 { throw RightmoveClientError.challenged(reason: "HTTP 403 (Forbidden)", statusCode: status) }
+        if status == 503 { throw RightmoveClientError.challenged(reason: "HTTP 503 — Cloudflare interstitial", statusCode: status) }
+        if status == 429 { throw RightmoveClientError.challenged(reason: "HTTP 429 — rate limited", statusCode: status) }
+        if let marker = ["Just a moment...", "challenge-platform", "cf-browser-verification"].first(where: { body.contains($0) }) {
+            throw RightmoveClientError.challenged(reason: "matched marker “\(marker)”", statusCode: status)
+        }
+        guard (200...299).contains(status) else { throw RightmoveClientError.httpError(statusCode: status) }
+
+        let decoded = try JSONDecoder().decode(TypeAheadResponse.self, from: data)
+        // Drop any match we couldn't assemble an identifier for.
+        return decoded.matches.filter { !$0.locationIdentifier.isEmpty }
+    }
+
     /// Fetches and parses a property's detail page by id.
     public func fetchPropertyDetail(id: Int) async throws -> PropertyDetail {
         guard let url = URL(string: "https://www.rightmove.co.uk/properties/\(id)") else {

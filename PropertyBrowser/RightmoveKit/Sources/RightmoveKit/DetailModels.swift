@@ -92,3 +92,32 @@ public struct PropertyText: Decodable {
     public let shortDescription: String?
     public let pageTitle: String?
 }
+
+// MARK: - Computed helpers
+
+extension ListingHistory {
+    /// Parse the date embedded in strings like "Added on 22/05/2026" or "Reduced on 01/06/2026".
+    public var parsedDate: Date? {
+        guard let reason = listingUpdateReason else { return nil }
+        // Extract dd/mm/yyyy
+        let pattern = #"(\d{2}/\d{2}/\d{4})"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let match = re.firstMatch(in: reason, range: NSRange(reason.startIndex..., in: reason)),
+              let range = Range(match.range(at: 1), in: reason) else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd/MM/yyyy"
+        formatter.locale = Locale(identifier: "en_GB")
+        return formatter.date(from: String(reason[range]))
+    }
+
+    /// e.g. "Added" or "Reduced"
+    public var verb: String? {
+        guard let reason = listingUpdateReason else { return nil }
+        return reason.components(separatedBy: " ").first
+    }
+}
+
+extension PropertyDetail {
+    /// The date the listing first appeared, parsed from listingHistory.
+    public var listingAddedDate: Date? { listingHistory?.parsedDate }
+}

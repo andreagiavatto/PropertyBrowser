@@ -9,15 +9,25 @@ struct WatchlistView: View {
     @Query(sort: \PinnedProperty.pinnedAt, order: .reverse) private var pins: [PinnedProperty]
 
     var body: some View {
-        List {
-            ForEach(pins, id: \.propertyID) { pin in
-                NavigationLink(value: pin.propertyID) {
-                    WatchlistRow(pin: pin)
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 280), spacing: 16)],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(pins, id: \.propertyID) { pin in
+                    NavigationLink(value: pin.propertyID) {
+                        PropertyCard(
+                            data: pin,
+                            isPinned: true,
+                            onTogglePin: { unpin(pin) }
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .onDelete(perform: delete)
+            .padding()
         }
-        .listStyle(.inset)
         .overlay {
             if pins.isEmpty {
                 ContentUnavailableView(
@@ -46,27 +56,7 @@ struct WatchlistView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        let store = TrackingStore(context: context)
-        for index in offsets { store.unpin(id: pins[index].propertyID) }
-    }
-}
-
-struct WatchlistRow: View {
-    let pin: PinnedProperty
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(pin.currentPriceDisplay ?? "—").font(.headline)
-                Spacer()
-                StatusBadge(state: pin.currentState)
-            }
-            Text(Format.oneLine(pin.displayAddress))
-                .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-            Text("Checked \(Format.relative(pin.lastCheckedAt))")
-                .font(.caption2).foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 3)
+    private func unpin(_ pin: PinnedProperty) {
+        TrackingStore(context: context).unpin(id: pin.propertyID)
     }
 }

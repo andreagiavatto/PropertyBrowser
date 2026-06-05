@@ -223,6 +223,21 @@ final class RightmoveKitTests: XCTestCase {
         XCTAssertEqual(ds.priceAmount, 600_000)   // parsed from "£600,000"
     }
 
+    func testSnapshotCarriesCardFields() throws {
+        let page = try RightmoveParser.parseSearchResults(html: try fixture("search-clapham-featured"))
+        let featured = try XCTUnwrap(page.properties.first { $0.propertyID == 87848940 && $0.isFeatured })
+        let s = try XCTUnwrap(TrackedSnapshot(search: featured))
+
+        // Everything needed to replicate the card without re-fetching.
+        XCTAssertEqual(s.bedrooms, 2)
+        XCTAssertEqual(s.bathrooms, 2)
+        XCTAssertEqual(s.propertySubType, "Flat")
+        XCTAssertEqual(s.addedOrReduced, "Added on 29/04/2026")
+        XCTAssertFalse(s.isPriceReduced)
+        let thumb = try XCTUnwrap(s.thumbnailURLString)
+        XCTAssertTrue(thumb.hasPrefix("https://"))
+    }
+
     func testPageIndices() throws {
         let search = try XCTUnwrap(RightmoveSearchURL(string: "https://www.rightmove.co.uk/property-for-sale/find.html?locationIdentifier=REGION%5E70315"))
         XCTAssertEqual(search.pageIndices(forResultCount: 345), Array(stride(from: 0, to: 15 * 24, by: 24)))

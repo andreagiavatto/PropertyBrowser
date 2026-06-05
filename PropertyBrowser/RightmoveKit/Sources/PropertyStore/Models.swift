@@ -17,6 +17,14 @@ public final class PinnedProperty {
 
     public var displayAddress: String?
     public var bedrooms: Int?
+    public var bathrooms: Int?
+    public var propertySubType: String?
+    /// First gallery image URL, cached so the watchlist card can show a thumbnail.
+    public var thumbnailURLString: String?
+    /// Whether the latest known update was a price reduction (card "Reduced" tag).
+    public var isPriceReduced: Bool = false
+    /// Human "Added/Reduced on …" text for the card footer.
+    public var addedOrReduced: String?
 
     public var currentPriceAmount: Int?
     public var currentPriceDisplay: String?
@@ -37,6 +45,11 @@ public final class PinnedProperty {
         self.propertyID = snapshot.propertyID
         self.displayAddress = snapshot.displayAddress
         self.bedrooms = snapshot.bedrooms
+        self.bathrooms = snapshot.bathrooms
+        self.propertySubType = snapshot.propertySubType
+        self.thumbnailURLString = snapshot.thumbnailURLString
+        self.isPriceReduced = snapshot.isPriceReduced
+        self.addedOrReduced = snapshot.addedOrReduced
         self.currentPriceAmount = snapshot.priceAmount
         self.currentPriceDisplay = snapshot.priceDisplay
         self.currentStateRaw = snapshot.state.rawValue
@@ -59,7 +72,12 @@ public final class PinnedProperty {
             state: currentState,
             capturedAt: lastSeenAt ?? pinnedAt,
             displayAddress: displayAddress,
-            bedrooms: bedrooms
+            bedrooms: bedrooms,
+            bathrooms: bathrooms,
+            propertySubType: propertySubType,
+            thumbnailURLString: thumbnailURLString,
+            isPriceReduced: isPriceReduced,
+            addedOrReduced: addedOrReduced
         )
     }
 }

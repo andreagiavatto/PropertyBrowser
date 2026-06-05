@@ -102,6 +102,12 @@ public final class TrackingStore {
         pin.lastSeenAt = snapshot.capturedAt
         pin.lastCheckedAt = snapshot.capturedAt
         if let addr = snapshot.displayAddress { pin.displayAddress = addr }
+        if let beds = snapshot.bedrooms { pin.bedrooms = beds }
+        if let baths = snapshot.bathrooms { pin.bathrooms = baths }
+        if let subtype = snapshot.propertySubType { pin.propertySubType = subtype }
+        if let thumb = snapshot.thumbnailURLString { pin.thumbnailURLString = thumb }
+        pin.isPriceReduced = snapshot.isPriceReduced
+        if let added = snapshot.addedOrReduced { pin.addedOrReduced = added }
 
         try? context.save()
         return recorded

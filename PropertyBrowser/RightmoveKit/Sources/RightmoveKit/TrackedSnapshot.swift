@@ -12,9 +12,18 @@ public struct TrackedSnapshot: Equatable, Sendable {
     public let state: ListingState
     public let capturedAt: Date
 
-    // Descriptive fields (carried so a pin can be created from a snapshot).
+    // Descriptive fields (carried so a pin — and its card — can be rebuilt from
+    // a snapshot without re-fetching).
     public let displayAddress: String?
     public let bedrooms: Int?
+    public let bathrooms: Int?
+    public let propertySubType: String?
+    /// First gallery image, for the card thumbnail.
+    public let thumbnailURLString: String?
+    /// Whether the latest listing update was a price reduction (card "Reduced" tag).
+    public let isPriceReduced: Bool
+    /// Human "Added/Reduced on …" text shown in the card footer, if any.
+    public let addedOrReduced: String?
 
     public init(
         propertyID: Int,
@@ -23,7 +32,12 @@ public struct TrackedSnapshot: Equatable, Sendable {
         state: ListingState,
         capturedAt: Date = Date(),
         displayAddress: String? = nil,
-        bedrooms: Int? = nil
+        bedrooms: Int? = nil,
+        bathrooms: Int? = nil,
+        propertySubType: String? = nil,
+        thumbnailURLString: String? = nil,
+        isPriceReduced: Bool = false,
+        addedOrReduced: String? = nil
     ) {
         self.propertyID = propertyID
         self.priceAmount = priceAmount
@@ -32,6 +46,11 @@ public struct TrackedSnapshot: Equatable, Sendable {
         self.capturedAt = capturedAt
         self.displayAddress = displayAddress
         self.bedrooms = bedrooms
+        self.bathrooms = bathrooms
+        self.propertySubType = propertySubType
+        self.thumbnailURLString = thumbnailURLString
+        self.isPriceReduced = isPriceReduced
+        self.addedOrReduced = addedOrReduced
     }
 
     /// Extracts whole pounds from a display string like "£16,950,000" or
@@ -55,7 +74,12 @@ public extension TrackedSnapshot {
             state: p.listingState,
             capturedAt: date,
             displayAddress: p.displayAddress,
-            bedrooms: p.bedrooms?.int
+            bedrooms: p.bedrooms?.int,
+            bathrooms: p.bathrooms?.int,
+            propertySubType: p.propertySubType,
+            thumbnailURLString: p.propertyImages?.images?.first?.srcUrl,
+            isPriceReduced: p.listingUpdate?.listingUpdateReason == "price_reduced",
+            addedOrReduced: p.addedOrReduced
         )
     }
 
@@ -70,7 +94,12 @@ public extension TrackedSnapshot {
             state: d.listingState,
             capturedAt: date,
             displayAddress: d.address?.displayAddress,
-            bedrooms: d.bedrooms?.int
+            bedrooms: d.bedrooms?.int,
+            bathrooms: d.bathrooms?.int,
+            propertySubType: d.propertySubType,
+            thumbnailURLString: d.images?.first?.galleryURLString,
+            isPriceReduced: d.listingHistory?.verb == "Reduced",
+            addedOrReduced: d.listingHistory?.listingUpdateReason
         )
     }
 }

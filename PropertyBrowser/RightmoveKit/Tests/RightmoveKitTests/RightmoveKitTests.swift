@@ -46,6 +46,43 @@ final class RightmoveKitTests: XCTestCase {
         }
     }
 
+    // MARK: Featured-duplicate de-duplication
+
+    func testFeaturedPropertyAppearsTwiceWithDistinctKeys() throws {
+        let page = try RightmoveParser.parseSearchResults(html: try fixture("search-clapham-featured"))
+
+        // 25 rows but only 24 distinct listings — one is repeated as "featured".
+        XCTAssertEqual(page.properties.count, 25)
+        XCTAssertEqual(Set(page.properties.compactMap { $0.propertyID }).count, 24)
+
+        let dupes = page.properties.filter { $0.propertyID == 87848940 }
+        XCTAssertEqual(dupes.count, 2, "Featured listing should appear twice")
+        XCTAssertEqual(dupes.filter { $0.isFeatured }.count, 1)
+
+        // listingKey disambiguates the two copies for SwiftUI identity.
+        XCTAssertEqual(Set(page.properties.map { $0.listingKey }).count, 25)
+        XCTAssertTrue(page.properties.contains { $0.listingKey == "87848940-featured" })
+        XCTAssertTrue(page.properties.contains { $0.listingKey == "87848940" })
+    }
+
+    func testUniquePropertiesCollapsesFeaturedDuplicate() throws {
+        let page = try RightmoveParser.parseSearchResults(html: try fixture("search-clapham-featured"))
+        let unique = page.uniqueProperties
+
+        // One row per real listing.
+        XCTAssertEqual(unique.count, 24)
+        XCTAssertEqual(Set(unique.compactMap { $0.propertyID }).count, 24)
+
+        // The kept copy of the duplicated listing is the canonical (non-featured) one.
+        let kept = unique.filter { $0.propertyID == 87848940 }
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertFalse(kept[0].isFeatured, "Should prefer the in-place copy over the promoted one")
+
+        // Snapshots built from the deduped page have no repeated propertyIDs.
+        let snapshots = unique.compactMap { TrackedSnapshot(search: $0) }
+        XCTAssertEqual(Set(snapshots.map { $0.propertyID }).count, snapshots.count)
+    }
+
     // MARK: Property detail
 
     func testPropertyDetailParsing() throws {

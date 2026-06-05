@@ -49,7 +49,7 @@ for path in paths {
             }
             print("  \(pad("ID", 10)) \(pad("PRICE", 13)) \(pad("STATUS", 12)) \(pad("UPDATE", 14)) BEDS  ADDRESS")
             for p in page.properties {
-                let id = p.propertyID.map(String.init) ?? "?"
+                let id = p.listingKey
                 let price = p.price?.primaryDisplay ?? p.price?.amount?.description ?? "?"
                 let status = p.listingState.rawValue
                 let update = p.listingUpdate?.listingUpdateReason ?? "-"

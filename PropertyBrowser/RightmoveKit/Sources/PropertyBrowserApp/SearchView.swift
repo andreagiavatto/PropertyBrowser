@@ -47,7 +47,7 @@ struct SearchView: View {
                     alignment: .leading,
                     spacing: 16
                 ) {
-                    ForEach(model.results, id: \.propertyID) { property in
+                    ForEach(model.results, id: \.listingKey) { property in
                         if let id = property.propertyID {
                             NavigationLink(value: id) {
                                 SearchResultCard(
@@ -274,7 +274,7 @@ struct SearchResultCard: View {
     private var photo: some View {
         thumbnail
             .frame(maxWidth: .infinity)
-            .frame(height: 170)
+            .frame(height: 200)
             .clipped()
             .overlay(alignment: .topTrailing) { pinButton }
             .overlay(alignment: .bottomLeading) {
@@ -283,14 +283,31 @@ struct SearchResultCard: View {
                         .padding(8)
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if property.isFeatured {
+                    featuredBadge
+                        .padding(8)
+                }
+            }
+    }
+
+    private var featuredBadge: some View {
+        Label("Featured", systemImage: "star.fill")
+            .font(.system(size: 15, weight: .semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.orange, in: Capsule())
+            .help("Promoted listing — also appears in its normal position below")
     }
 
     private var pinButton: some View {
         Button(action: onTogglePin) {
             Image(systemName: isPinned ? "pin.fill" : "pin")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isPinned ? Color.accentColor : .primary)
-                .padding(7)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isPinned ? Color.purple : .primary)
+                .padding(10)
                 .background(.ultraThinMaterial, in: Circle())
         }
         .buttonStyle(.plain)
@@ -303,10 +320,10 @@ struct SearchResultCard: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(property.price?.primaryDisplay ?? "Price on application")
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
 
             Text(Format.oneLine(property.displayAddress))
-                .font(.subheadline)
+                .font(.title3)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -332,7 +349,7 @@ struct SearchResultCard: View {
                     .lineLimit(1)
             }
         }
-        .font(.caption)
+        .font(.body)
         .foregroundStyle(.secondary)
         .labelStyle(.titleAndIcon)
     }
@@ -344,15 +361,16 @@ struct SearchResultCard: View {
                 if isReduced {
                     Label("Reduced", systemImage: "arrow.down.right")
                         .foregroundStyle(.green)
+                        .fontWeight(.semibold)
                 }
                 Spacer(minLength: 0)
                 if let added = property.addedOrReduced, !added.isEmpty {
                     Text(added)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-            .font(.caption)
+            .font(.body)
         }
     }
 

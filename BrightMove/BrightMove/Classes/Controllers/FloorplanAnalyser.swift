@@ -6,13 +6,13 @@ import AppKit
 #endif
 
 /// Result of a floor-area extraction attempt.
-struct FloorArea {
+public struct FloorArea {
     /// Area in square metres.
-    let sqm: Double
+    public let sqm: Double
     /// True when the value was back-calculated from price/sqft rather than read directly.
-    let isApproximate: Bool
+    public let isApproximate: Bool
 
-    var formatted: String {
+    public var formatted: String {
         let s = String(format: sqm >= 100 ? "%.0f" : "%.1f", sqm)
         return isApproximate ? "~\(s) m²" : "\(s) m²"
     }
@@ -20,7 +20,7 @@ struct FloorArea {
 
 /// Extracts floor area from a floorplan image URL using Vision OCR,
 /// falling back to a price-per-sqft back-calculation when OCR finds nothing.
-enum FloorplanAnalyser {
+public enum FloorplanAnalyser {
 
     // MARK: - Public entry point
 

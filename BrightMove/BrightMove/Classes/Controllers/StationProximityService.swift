@@ -1,22 +1,22 @@
-import Foundation
+import Combine
 import MapKit
 import CoreLocation
 
 // MARK: - Model
 
-struct NearbyStation: Identifiable {
-    let id = UUID()
-    let mapItem: MKMapItem
-    let name: String
-    let coordinate: CLLocationCoordinate2D
+public struct NearbyStation: Identifiable {
+    public let id = UUID()
+    public let mapItem: MKMapItem
+    public let name: String
+    public let coordinate: CLLocationCoordinate2D
     /// Walking distance in metres. nil while loading; uses straight-line as fallback.
-    var walkingMetres: Double?
+    public var walkingMetres: Double?
     /// Estimated walking time in seconds. nil while loading.
-    var walkingSeconds: Double?
+    public var walkingSeconds: Double?
     /// True when walkingMetres is a straight-line estimate rather than a routed distance.
-    var isApproximate: Bool = false
+    public var isApproximate: Bool = false
 
-    var formattedDistance: String? {
+    public var formattedDistance: String? {
         guard let m = walkingMetres else { return nil }
         let prefix = isApproximate ? "~" : ""
         if m < 1000 {
@@ -27,7 +27,7 @@ struct NearbyStation: Identifiable {
     }
 
     /// Walking time, e.g. "6 min" or "<1 min". nil while loading.
-    var formattedDuration: String? {
+    public var formattedDuration: String? {
         guard let s = walkingSeconds else { return nil }
         let prefix = isApproximate ? "~" : ""
         let minutes = Int((s / 60).rounded())
@@ -35,7 +35,7 @@ struct NearbyStation: Identifiable {
     }
 
     /// Combined label for a map pin, e.g. "6 min · 450m". nil while loading.
-    var formattedDistanceAndDuration: String? {
+    public var formattedDistanceAndDuration: String? {
         switch (formattedDuration, formattedDistance) {
         case let (dur?, dist?): return "\(dur) · \(dist)"
         case let (dur?, nil):   return dur
@@ -45,7 +45,7 @@ struct NearbyStation: Identifiable {
     }
 
     /// True when the station is within 500 m walking distance.
-    var isWithin500m: Bool {
+    public var isWithin500m: Bool {
         guard let m = walkingMetres else { return false }
         return m <= 500
     }
@@ -56,15 +56,15 @@ struct NearbyStation: Identifiable {
 /// Finds the nearest stations via MKLocalSearch and resolves walking distances
 /// with MKDirections (one request per station, up to maxResults).
 @MainActor
-final class StationProximityService: ObservableObject {
+public final class StationProximityService: ObservableObject {
 
-    @Published var stations: [NearbyStation] = []
-    @Published var isLoading = false
+    @Published public var stations: [NearbyStation] = []
+    @Published public var isLoading = false
 
     private let maxResults = 4
     private let radiusMetres: Double = 1000
 
-    func load(near coordinate: CLLocationCoordinate2D) async {
+    public func load(near coordinate: CLLocationCoordinate2D) async {
         isLoading = true
         stations = []
 

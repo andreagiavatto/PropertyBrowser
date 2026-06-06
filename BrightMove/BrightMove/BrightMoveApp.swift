@@ -1,10 +1,17 @@
+//
+//  BrightMoveApp.swift
+//  BrightMove
+//
+//  Created by Andrea G on 06/06/2026.
+//
+
 import SwiftUI
 import SwiftData
 import AppKit
 import PropertyStore
 
 @main
-struct PropertyBrowserApp: App {
+struct BrightMoveApp: App {
     let container: ModelContainer
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

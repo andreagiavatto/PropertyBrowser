@@ -1,5 +1,4 @@
 import Foundation
-import RightmoveKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

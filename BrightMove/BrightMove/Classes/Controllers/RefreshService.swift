@@ -6,10 +6,10 @@ import PropertyStore
 /// store, recording price/status/delisting changes. A 404/410 (or a page that
 /// reports archived) is treated as a delisting.
 @MainActor
-struct RefreshService {
+public struct RefreshService {
     let client: RightmoveClient
 
-    func refreshAll(store: TrackingStore) async -> String {
+    public func refreshAll(store: TrackingStore) async -> String {
         let pins = store.allPins()
         guard !pins.isEmpty else { return "No pinned properties to refresh." }
 

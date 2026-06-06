@@ -7,7 +7,7 @@ import Foundation
 /// (`archived == true` / `published == false`). Search-results pages expose it
 /// in `displayStatus` and/or a per-property `tags` array. This enum collapses
 /// all of those into one value the rest of the app can track.
-public enum ListingState: String, Equatable {
+public enum ListingState: String, Equatable, Sendable {
     case available
     case underOffer
     case soldSTC

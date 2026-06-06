@@ -16,12 +16,25 @@ struct PropertyDetailView: View {
     @State private var isLoading = true
     @State private var error: String?
 
-    // New state
+    // Async-derived content
     @StateObject private var stationService = StationProximityService()
     @State private var floorArea: FloorArea?
     @State private var isLoadingFloorArea = false
     @State private var renderedDescription: AttributedString?
-    @State private var descriptionExpanded = false
+
+    // Floorplan zoom viewer
+    @State private var showFloorplanViewer = false
+    @State private var floorplanStartIndex = 0
+
+    // Collapsible-section state, remembered app-wide (essentials stay expanded;
+    // these four start collapsed).
+    @AppStorage("detail.section.description") private var descriptionExpanded = false
+    @AppStorage("detail.section.features")    private var featuresExpanded = false
+    @AppStorage("detail.section.lease")       private var leaseExpanded = false
+    @AppStorage("detail.section.history")     private var historyExpanded = false
+
+    /// Width at which the layout splits into two columns.
+    private let twoColumnBreakpoint: CGFloat = 900
 
     private var pin: PinnedProperty? { pins.first { $0.propertyID == propertyID } }
     private var isPinned: Bool { pin != nil }
@@ -31,7 +44,7 @@ struct PropertyDetailView: View {
             if isLoading {
                 ProgressView("Loading listing…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let detail {
-                content(detail)
+                responsiveContent(detail)
             } else {
                 ContentUnavailableView(
                     "Couldn't load this listing",
@@ -51,138 +64,185 @@ struct PropertyDetailView: View {
         .task(id: propertyID) { await load() }
     }
 
-    // MARK: - Main content
+    // MARK: - Responsive container
 
     @ViewBuilder
-    private func content(_ d: PropertyDetail) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-
-                // 1. Gallery
-                gallery(d)
-
-                // 2. Price + reduction badge + status
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(d.prices?.primaryPrice ?? "Price on application")
-                            .font(.largeTitle.bold())
-                        if let q = d.prices?.displayPriceQualifier, !q.isEmpty {
-                            Text(q).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        StatusBadge(state: d.listingState)
+    private func responsiveContent(_ d: PropertyDetail) -> some View {
+        GeometryReader { geo in
+            if geo.size.width >= twoColumnBreakpoint {
+                // Two columns: sticky media on the left, scrolling details on the right.
+                let mediaWidth = min(480, geo.size.width * 0.44)
+                HStack(alignment: .top, spacing: 16) {
+                    ScrollView {
+                        mediaColumn(d).padding(24)
                     }
-                    if let badge = reductionBadge {
-                        Text(badge)
-                            .font(.callout)
-                            .foregroundStyle(.orange)
+                    .frame(minWidth: mediaWidth)
+
+//                    Divider()
+
+                    ScrollView {
+                        detailsColumn(d)
+                            .padding(24)
+                            .frame(maxWidth: 640, alignment: .leading)
                     }
-
-                    // 3. Address
-                    Text(Format.oneLine(d.address?.displayAddress))
-                        .font(.title3).foregroundStyle(.secondary)
-
-                    // 4. Facts row
-                    factsRow(d)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            } else {
+                // Single stacked column; uses the full available width.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        mediaColumn(d)
+                        detailsColumn(d)
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
 
-                // 5. Verdict checklist
-                verdictChecklist(d)
+    // MARK: - Media column (carousel + floorplans)
 
-                // 6. Floorplan
-                if let floor = d.floorplans?.first?.url, let url = URL(string: floor) {
-                    section("Floorplan") {
+    @ViewBuilder
+    private func mediaColumn(_ d: PropertyDetail) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ImageCarousel(urls: photoURLs(d))
+
+            let floorplans = floorplanURLs(d)
+            if !floorplans.isEmpty {
+                Text(floorplans.count > 1 ? "Floorplans" : "Floorplan")
+                    .font(.headline)
+                ForEach(Array(floorplans.enumerated()), id: \.offset) { i, url in
+                    Button {
+                        floorplanStartIndex = i
+                        showFloorplanViewer = true
+                    } label: {
                         AsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fit) }
-                            placeholder: { ProgressView() }
-                            .frame(maxHeight: 420)
+                            placeholder: { ProgressView().frame(height: 200) }
+                            .frame(maxHeight: 360)
+                            .overlay(alignment: .bottomTrailing) {
+                                Label("Zoom", systemImage: "plus.magnifyingglass")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .padding(8)
+                            }
                     }
+                    .buttonStyle(.plain)
                 }
+            }
+        }
+        .sheet(isPresented: $showFloorplanViewer) {
+            ZoomableImageViewer(urls: floorplanURLs(d), startIndex: floorplanStartIndex, title: "Floorplan")
+        }
+    }
 
-                // 7 + 8. Map with station pins + nearest stations list
-                if let lat = d.location?.lat, let lng = d.location?.lng {
-                    section("Location") {
-                        stationMap(lat: lat, lng: lng, title: Format.oneLine(d.address?.displayAddress))
+    // MARK: - Details column
+
+    @ViewBuilder
+    private func detailsColumn(_ d: PropertyDetail) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+
+            // Price + status + reduction + address + facts (always expanded)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(d.prices?.primaryPrice ?? "Price on application")
+                        .font(.largeTitle.bold())
+                    if let q = d.prices?.displayPriceQualifier, !q.isEmpty {
+                        Text(q).foregroundStyle(.secondary)
                     }
-                    if !stationService.stations.isEmpty || stationService.isLoading {
-                        section("Nearest stations") { stationList() }
-                    }
+                    Spacer()
+                    StatusBadge(state: d.listingState)
                 }
+                if let badge = reductionBadge {
+                    Text(badge).font(.callout).foregroundStyle(.orange)
+                }
+                Text(Format.oneLine(d.address?.displayAddress))
+                    .font(.title3).foregroundStyle(.secondary)
+                factsRow(d)
+            }
 
-                // 9. Listing age + update reason
-                listingAgeLine(d)
+            // Verdict checklist (stays here, below the facts)
+            verdictChecklist(d)
 
-                // 10. Price history chart
-                if isPinned, let pin { priceHistory(pin) }
+            // Map + stations (always expanded)
+            if let lat = d.location?.lat, let lng = d.location?.lng {
+                section("Location") {
+                    stationMap(lat: lat, lng: lng, title: Format.oneLine(d.address?.displayAddress))
+                }
+                if !stationService.stations.isEmpty || stationService.isLoading {
+                    section("Nearest stations") { stationList() }
+                }
+            }
 
-                // 11. Key features
-                if let features = d.keyFeatures, !features.isEmpty {
-                    section("Key features") {
+            // Listing age
+            listingAgeLine(d)
+
+            Divider()
+
+            // Collapsible sections
+            if renderedDescription != nil || d.text?.description?.isEmpty == false {
+                DisclosureGroup("Description", isExpanded: $descriptionExpanded) {
+                    descriptionBody(d).padding(.top, 6)
+                }
+                .font(.headline)
+            }
+
+            if let features = d.keyFeatures, !features.isEmpty {
+                DisclosureGroup("Key features", isExpanded: $featuresExpanded) {
+                    VStack(alignment: .leading, spacing: 4) {
                         ForEach(features, id: \.self) { f in
                             Label(f, systemImage: "checkmark.circle").font(.callout)
                         }
                     }
+                    .padding(.top, 6)
                 }
-
-                // 12. Description (HTML, collapsed)
-                if renderedDescription != nil || d.text?.description?.isEmpty == false {
-                    descriptionSection(d)
-                }
-
-                // 13. Lease / service charge
-                leaseSection(d)
-
-                // 14. View on Rightmove
-                if let url = rightmoveURL(forID: propertyID) {
-                    Link(destination: url) {
-                        Label("View on Rightmove", systemImage: "safari")
-                    }
-                }
+                .font(.headline)
             }
-            .padding(24)
-            .frame(maxWidth: 820, alignment: .leading)
+
+            let leaseTerms = leaseTerms(d)
+            if !leaseTerms.isEmpty {
+                DisclosureGroup("Lease & charges", isExpanded: $leaseExpanded) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(leaseTerms, id: \.self) { term in
+                            Label(term, systemImage: "doc.plaintext").font(.callout)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.headline)
+            }
+
+            if isPinned, let pin, pricePoints(pin).count >= 2 {
+                DisclosureGroup("Price history", isExpanded: $historyExpanded) {
+                    priceHistoryChart(pin).padding(.top, 6)
+                }
+                .font(.headline)
+            }
+
+            if let url = rightmoveURL(forID: propertyID) {
+                Link(destination: url) {
+                    Label("View on Rightmove", systemImage: "safari")
+                }
+                .padding(.top, 4)
+            }
         }
     }
 
-    // MARK: - Gallery
-
-    @ViewBuilder
-    private func gallery(_ d: PropertyDetail) -> some View {
-        let urls = (d.images ?? []).compactMap { $0.galleryURLString.flatMap(URL.init(string:)) }
-        if urls.isEmpty {
-            RoundedRectangle(cornerRadius: 10).fill(.gray.opacity(0.15))
-                .frame(height: 320)
-                .overlay { Image(systemName: "photo").font(.largeTitle).foregroundStyle(.secondary) }
-        } else {
-            ScrollView(.horizontal, showsIndicators: true) {
-                LazyHStack(spacing: 8) {
-                    ForEach(urls, id: \.self) { url in
-                        AsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                            placeholder: { Color.gray.opacity(0.12) }
-                            .frame(width: 480, height: 320)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-            }
-            .frame(height: 320)
-        }
-    }
-
-    // MARK: - Facts row
+    // MARK: - Facts row (wraps)
 
     @ViewBuilder
     private func factsRow(_ d: PropertyDetail) -> some View {
-        HStack(spacing: 18) {
+        FlowLayout(hSpacing: 14, vSpacing: 8) {
             if let beds = d.bedrooms?.int   { Label("\(beds) bed",   systemImage: "bed.double") }
             if let baths = d.bathrooms?.int  { Label("\(baths) bath", systemImage: "shower") }
             if let type = d.propertySubType  { Label(type,            systemImage: "house") }
-            if let tenure = d.tenure?.tenureType { Label(tenure.capitalized, systemImage: "doc.text") }
+            if let tenure = d.tenure?.tenureType { Label(prettyTenure(tenure), systemImage: "doc.text") }
             if isLoadingFloorArea {
-                Label("Calculating area…", systemImage: "ruler")
-                    .redacted(reason: .placeholder)
+                Label("Calculating area…", systemImage: "ruler").redacted(reason: .placeholder)
             } else if let area = floorArea {
                 Label(area.formatted, systemImage: "ruler")
-                if let price = pin?.currentPriceAmount ?? d.prices?.parsedAmount,
-                   area.sqm > 0 {
+                if let price = pin?.currentPriceAmount ?? d.prices?.parsedAmount, area.sqm > 0 {
                     let ppm2 = Int((Double(price) / area.sqm).rounded())
                     Label("£\(Format.thousands(ppm2))/m²", systemImage: "sterlingsign.square")
                 }
@@ -190,19 +250,24 @@ struct PropertyDetailView: View {
         }
         .font(.callout)
         .foregroundStyle(.secondary)
+        .padding(.top, 4)
+    }
+
+    private func prettyTenure(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
     // MARK: - Verdict checklist
 
     @ViewBuilder
     private func verdictChecklist(_ d: PropertyDetail) -> some View {
-        let hasFloorplan    = !(d.floorplans ?? []).isEmpty
-        let hasArea         = floorArea != nil && floorArea?.isApproximate == false
-        let stationNearby   = stationService.stations.first?.isWithin500m == true
+        let hasFloorplan  = !(d.floorplans ?? []).isEmpty
+        let hasArea       = floorArea != nil && floorArea?.isApproximate == false
+        let stationNearby = stationService.stations.first?.isWithin500m == true
 
         HStack(spacing: 16) {
-            VerdictDot(label: "Floorplan",   met: hasFloorplan)
-            VerdictDot(label: "Area known",  met: hasArea)
+            VerdictDot(label: "Floorplan",     met: hasFloorplan)
+            VerdictDot(label: "Area known",    met: hasArea)
             VerdictDot(label: "Station ≤500m", met: stationNearby,
                        loading: stationService.isLoading && stationService.stations.isEmpty)
         }
@@ -219,25 +284,15 @@ struct PropertyDetailView: View {
             latitudinalMeters: 1400,
             longitudinalMeters: 1400
         ))) {
-            // Property marker
-            Marker(title, coordinate: propertyCoord)
-                .tint(.red)
+            Marker(title, coordinate: propertyCoord).tint(.red)
 
-            // Walk-distance lines (separate ForEach — @MapContentBuilder
-            // can't mix Marker + MapPolyline in the same iteration)
             ForEach(stationService.stations) { station in
                 MapPolyline(coordinates: [propertyCoord, station.coordinate])
                     .stroke(.blue.opacity(0.55), lineWidth: 2)
             }
-
-            // Station markers — label shows walking time · distance once resolved
             ForEach(stationService.stations) { station in
-                Marker(
-                    stationMarkerLabel(station),
-                    systemImage: "tram.fill",
-                    coordinate: station.coordinate
-                )
-                .tint(.blue)
+                Marker(stationMarkerLabel(station), systemImage: "tram.fill", coordinate: station.coordinate)
+                    .tint(.blue)
             }
         }
         .frame(height: 300)
@@ -252,15 +307,10 @@ struct PropertyDetailView: View {
         }
     }
 
-    /// Pin label: station name, plus "time · distance" once the walk is resolved.
     private func stationMarkerLabel(_ station: NearbyStation) -> String {
-        if let info = station.formattedDistanceAndDuration {
-            return "\(station.name)\n\(info)"
-        }
+        if let info = station.formattedDistanceAndDuration { return "\(station.name)\n\(info)" }
         return station.name
     }
-
-    // MARK: - Station list
 
     @ViewBuilder
     private func stationList() -> some View {
@@ -271,9 +321,7 @@ struct PropertyDetailView: View {
                     Text(station.name).font(.callout)
                     Spacer()
                     if let info = station.formattedDistanceAndDuration {
-                        Text(info)
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        Text(info).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                     } else {
                         ProgressView().scaleEffect(0.7)
                     }
@@ -293,88 +341,45 @@ struct PropertyDetailView: View {
                 if days == 1 { return "Added yesterday" }
                 return "Added \(days) days ago"
             }()
-            // Only append the update reason when it's a change (Reduced / Increased),
-            // not when it just repeats "Added on …".
             let verb = d.listingHistory?.verb?.lowercased() ?? ""
             let showUpdate = !verb.isEmpty && verb != "added"
             let updateText = showUpdate ? (d.listingHistory?.listingUpdateReason.map { " · \($0)" } ?? "") : ""
-            Text(ageText + updateText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            Text(ageText + updateText).font(.footnote).foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Description (HTML, collapsed)
+    // MARK: - Description body
 
     @ViewBuilder
-    private func descriptionSection(_ d: PropertyDetail) -> some View {
-        section("Description") {
-            if let attr = renderedDescription {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(attr)
-                        .font(.callout)
-                        .lineLimit(descriptionExpanded ? nil : 5)
-                        .textSelection(.enabled)
-                    Button(descriptionExpanded ? "Show less" : "Show more") {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            descriptionExpanded.toggle()
-                        }
-                    }
-                    .font(.callout)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.blue)
-                }
-            } else if let raw = d.text?.description, !raw.isEmpty {
-                // Fallback while attributed string is being built (or if it fails)
-                Text(raw)
-                    .font(.callout)
-                    .lineLimit(descriptionExpanded ? nil : 5)
-                    .textSelection(.enabled)
-                Button(descriptionExpanded ? "Show less" : "Show more") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        descriptionExpanded.toggle()
-                    }
-                }
-                .font(.callout)
-                .buttonStyle(.plain)
-                .foregroundStyle(.blue)
-            }
+    private func descriptionBody(_ d: PropertyDetail) -> some View {
+        if let attr = renderedDescription {
+            Text(attr).font(.callout).textSelection(.enabled)
+        } else if let raw = d.text?.description, !raw.isEmpty {
+            Text(raw).font(.callout).textSelection(.enabled)
         }
     }
 
-    // MARK: - Lease / service charge
+    // MARK: - Lease terms
 
-    @ViewBuilder
-    private func leaseSection(_ d: PropertyDetail) -> some View {
-        let leaseTerms = (d.keyFeatures ?? []).filter { feature in
+    private func leaseTerms(_ d: PropertyDetail) -> [String] {
+        (d.keyFeatures ?? []).filter { feature in
             let lower = feature.lowercased()
             return lower.contains("lease") || lower.contains("ground rent")
                 || lower.contains("service charge") || lower.contains("maintenance")
         }
-        if !leaseTerms.isEmpty {
-            section("Lease & charges") {
-                ForEach(leaseTerms, id: \.self) { term in
-                    Label(term, systemImage: "doc.plaintext").font(.callout)
-                }
-            }
-        }
     }
 
-    // MARK: - Price history
+    // MARK: - Price history chart
 
     @ViewBuilder
-    private func priceHistory(_ pin: PinnedProperty) -> some View {
+    private func priceHistoryChart(_ pin: PinnedProperty) -> some View {
         let points = pricePoints(pin)
-        if points.count >= 2 {
-            section("Price history") {
-                Chart(points) { p in
-                    LineMark(x: .value("Date", p.date), y: .value("Price", p.amount))
-                        .interpolationMethod(.stepEnd)
-                    PointMark(x: .value("Date", p.date), y: .value("Price", p.amount))
-                }
-                .frame(height: 200)
-            }
+        Chart(points) { p in
+            LineMark(x: .value("Date", p.date), y: .value("Price", p.amount))
+                .interpolationMethod(.stepEnd)
+            PointMark(x: .value("Date", p.date), y: .value("Price", p.amount))
         }
+        .frame(height: 200)
     }
 
     // MARK: - Price reduction badge
@@ -392,8 +397,7 @@ struct PropertyDetailView: View {
         if let first = firstPrice, let current = currentPrice, first > current {
             totalDrop = " −£\(Format.thousands(first - current))"
         }
-        let count = reductions.count
-        return "Reduced \(count)×\(totalDrop)"
+        return "Reduced \(reductions.count)×\(totalDrop)"
     }
 
     // MARK: - Section helper
@@ -406,7 +410,17 @@ struct PropertyDetailView: View {
         }
     }
 
-    // MARK: - Data helpers
+    // MARK: - Media URL helpers
+
+    private func photoURLs(_ d: PropertyDetail) -> [URL] {
+        (d.images ?? []).compactMap { $0.galleryURLString.flatMap(URL.init(string:)) }
+    }
+
+    private func floorplanURLs(_ d: PropertyDetail) -> [URL] {
+        (d.floorplans ?? []).compactMap { $0.url.flatMap(URL.init(string:)) }
+    }
+
+    // MARK: - Price points
 
     private struct PricePoint: Identifiable {
         let id = UUID()
@@ -433,18 +447,16 @@ struct PropertyDetailView: View {
         do {
             let d = try await model.client.fetchPropertyDetail(id: propertyID)
             detail = d
-            isLoading = false   // Show the page immediately
+            isLoading = false
 
             if isPinned, let snap = TrackedSnapshot(detail: d) {
                 TrackingStore(context: context).apply(snap)
             }
 
-            // HTML description: synchronous on MainActor, fast
             if let html = d.text?.description, !html.isEmpty {
                 renderedDescription = html.htmlToAttributedString()
             }
 
-            // Floor area + station search: run concurrently
             isLoadingFloorArea = true
             let floorURL = d.floorplans?.first?.url.flatMap(URL.init(string:))
             let price    = d.prices?.parsedAmount
@@ -452,20 +464,14 @@ struct PropertyDetailView: View {
 
             if let lat = d.location?.lat, let lng = d.location?.lng {
                 let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                async let areaResult  = FloorplanAnalyser.extract(
-                    floorplanURL: floorURL,
-                    totalPriceGBP: price,
-                    pricePerSqFtString: ppsf
-                )
+                async let areaResult = FloorplanAnalyser.extract(
+                    floorplanURL: floorURL, totalPriceGBP: price, pricePerSqFtString: ppsf)
                 async let stationTask: Void = stationService.load(near: coord)
                 let (area, _) = await (areaResult, stationTask)
                 floorArea = area
             } else {
                 floorArea = await FloorplanAnalyser.extract(
-                    floorplanURL: floorURL,
-                    totalPriceGBP: price,
-                    pricePerSqFtString: ppsf
-                )
+                    floorplanURL: floorURL, totalPriceGBP: price, pricePerSqFtString: ppsf)
             }
             isLoadingFloorArea = false
 
@@ -534,5 +540,3 @@ extension DetailPrices {
         return Int(digits)
     }
 }
-
-

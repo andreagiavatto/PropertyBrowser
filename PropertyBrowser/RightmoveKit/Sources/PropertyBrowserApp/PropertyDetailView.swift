@@ -59,6 +59,7 @@ struct PropertyDetailView: View {
                 Button(action: togglePin) {
                     Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.fill" : "pin")
                 }
+                .foregroundStyle(isPinned ? .purple : .primary)
             }
         }
         .task(id: propertyID) { await load() }
@@ -77,8 +78,6 @@ struct PropertyDetailView: View {
                         mediaColumn(d).padding(24)
                     }
                     .frame(minWidth: mediaWidth)
-
-//                    Divider()
 
                     ScrollView {
                         detailsColumn(d)
@@ -105,13 +104,13 @@ struct PropertyDetailView: View {
 
     @ViewBuilder
     private func mediaColumn(_ d: PropertyDetail) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 24) {
             ImageCarousel(urls: photoURLs(d))
 
             let floorplans = floorplanURLs(d)
             if !floorplans.isEmpty {
                 Text(floorplans.count > 1 ? "Floorplans" : "Floorplan")
-                    .font(.headline)
+                    .font(.title3).fontWeight(.semibold)
                 ForEach(Array(floorplans.enumerated()), id: \.offset) { i, url in
                     Button {
                         floorplanStartIndex = i
@@ -141,7 +140,7 @@ struct PropertyDetailView: View {
 
     @ViewBuilder
     private func detailsColumn(_ d: PropertyDetail) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 24) {
 
             // Price + status + reduction + address + facts (always expanded)
             VStack(alignment: .leading, spacing: 6) {
@@ -153,9 +152,10 @@ struct PropertyDetailView: View {
                     }
                     Spacer()
                     StatusBadge(state: d.listingState)
+                        .font(.body)
                 }
                 if let badge = reductionBadge {
-                    Text(badge).font(.callout).foregroundStyle(.orange)
+                    Text(badge).font(.body).foregroundStyle(.orange)
                 }
                 Text(Format.oneLine(d.address?.displayAddress))
                     .font(.title3).foregroundStyle(.secondary)
@@ -192,7 +192,7 @@ struct PropertyDetailView: View {
                 DisclosureGroup("Key features", isExpanded: $featuresExpanded) {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(features, id: \.self) { f in
-                            Label(f, systemImage: "checkmark.circle").font(.callout)
+                            Label(f, systemImage: "checkmark.circle").font(.body)
                         }
                     }
                     .padding(.top, 6)
@@ -205,7 +205,7 @@ struct PropertyDetailView: View {
                 DisclosureGroup("Lease & charges", isExpanded: $leaseExpanded) {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(leaseTerms, id: \.self) { term in
-                            Label(term, systemImage: "doc.plaintext").font(.callout)
+                            Label(term, systemImage: "doc.plaintext").font(.body)
                         }
                     }
                     .padding(.top, 6)
@@ -223,6 +223,7 @@ struct PropertyDetailView: View {
             if let url = rightmoveURL(forID: propertyID) {
                 Link(destination: url) {
                     Label("View on Rightmove", systemImage: "safari")
+                        .font(.headline)
                 }
                 .padding(.top, 4)
             }
@@ -248,7 +249,7 @@ struct PropertyDetailView: View {
                 }
             }
         }
-        .font(.callout)
+        .font(.title2)
         .foregroundStyle(.secondary)
         .padding(.top, 4)
     }
@@ -271,7 +272,7 @@ struct PropertyDetailView: View {
             VerdictDot(label: "Station ≤500m", met: stationNearby,
                        loading: stationService.isLoading && stationService.stations.isEmpty)
         }
-        .font(.footnote)
+        .font(.body)
     }
 
     // MARK: - Map + station overlays
@@ -281,21 +282,21 @@ struct PropertyDetailView: View {
         let propertyCoord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
         Map(initialPosition: .region(MKCoordinateRegion(
             center: propertyCoord,
-            latitudinalMeters: 1400,
-            longitudinalMeters: 1400
+            latitudinalMeters: 400,
+            longitudinalMeters: 400
         ))) {
             Marker(title, coordinate: propertyCoord).tint(.red)
 
             ForEach(stationService.stations) { station in
                 MapPolyline(coordinates: [propertyCoord, station.coordinate])
-                    .stroke(.blue.opacity(0.55), lineWidth: 2)
+                    .stroke(.blue.opacity(0.75), lineWidth: 3)
             }
             ForEach(stationService.stations) { station in
                 Marker(stationMarkerLabel(station), systemImage: "tram.fill", coordinate: station.coordinate)
                     .tint(.blue)
             }
         }
-        .frame(height: 300)
+        .frame(height: 400)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .bottomTrailing) {
             if stationService.isLoading && stationService.stations.isEmpty {
@@ -318,10 +319,10 @@ struct PropertyDetailView: View {
             ForEach(stationService.stations) { station in
                 HStack {
                     Image(systemName: "tram.fill").foregroundStyle(.blue)
-                    Text(station.name).font(.callout)
+                    Text(station.name).font(.body)
                     Spacer()
                     if let info = station.formattedDistanceAndDuration {
-                        Text(info).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(info).font(.body.monospacedDigit()).foregroundStyle(.secondary)
                     } else {
                         ProgressView().scaleEffect(0.7)
                     }
@@ -344,7 +345,7 @@ struct PropertyDetailView: View {
             let verb = d.listingHistory?.verb?.lowercased() ?? ""
             let showUpdate = !verb.isEmpty && verb != "added"
             let updateText = showUpdate ? (d.listingHistory?.listingUpdateReason.map { " · \($0)" } ?? "") : ""
-            Text(ageText + updateText).font(.footnote).foregroundStyle(.secondary)
+            Text(ageText + updateText).font(.callout).foregroundStyle(.secondary)
         }
     }
 
@@ -353,9 +354,9 @@ struct PropertyDetailView: View {
     @ViewBuilder
     private func descriptionBody(_ d: PropertyDetail) -> some View {
         if let attr = renderedDescription {
-            Text(attr).font(.callout).textSelection(.enabled)
+            Text(attr).font(.body).textSelection(.enabled)
         } else if let raw = d.text?.description, !raw.isEmpty {
-            Text(raw).font(.callout).textSelection(.enabled)
+            Text(raw).font(.body).textSelection(.enabled)
         }
     }
 
@@ -405,7 +406,7 @@ struct PropertyDetailView: View {
     @ViewBuilder
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
+            Text(title).font(.title3)
             content()
         }
     }

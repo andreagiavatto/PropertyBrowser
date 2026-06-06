@@ -42,7 +42,7 @@ struct ZoomableImageViewer: View {
             Divider()
             controls
         }
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(minWidth: 1024, minHeight: 768)
         .background(.background)
         .focusable()
         .focusEffectDisabled()
@@ -57,13 +57,16 @@ struct ZoomableImageViewer: View {
 
     private var header: some View {
         HStack {
-            Text(title ?? "Photo")
-                .font(.headline)
-            if urls.count > 1 {
-                Text("\(index + 1) / \(urls.count)")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            Group {
+                Text(title ?? "Photo")
+                    .font(.title2)
+                if urls.count > 1 {
+                    Text("\(index + 1) / \(urls.count)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
+            .fontWeight(.semibold)
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark").imageScale(.large)
@@ -71,7 +74,8 @@ struct ZoomableImageViewer: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
         }
-        .padding(12)
+        .padding(8)
+        .padding(.horizontal)
     }
 
     // MARK: - Image area
@@ -138,14 +142,15 @@ struct ZoomableImageViewer: View {
             Button { setScale(scale + 0.5) } label: { Image(systemName: "plus.magnifyingglass") }
                 .buttonStyle(.plain)
             Text("\(Int((scale * 100).rounded()))%")
-                .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 52, alignment: .leading)
             Spacer()
             Button("Reset") { resetZoom() }
                 .disabled(scale == 1 && offset == .zero)
         }
-        .padding(12)
+        .font(.body.monospacedDigit())
+        .padding(8)
+        .padding(.horizontal)
     }
 
     // MARK: - Gestures

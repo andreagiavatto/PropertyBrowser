@@ -61,7 +61,7 @@ final class StationProximityService: ObservableObject {
     @Published var stations: [NearbyStation] = []
     @Published var isLoading = false
 
-    private let maxResults = 3
+    private let maxResults = 4
     private let radiusMetres: Double = 1000
 
     func load(near coordinate: CLLocationCoordinate2D) async {

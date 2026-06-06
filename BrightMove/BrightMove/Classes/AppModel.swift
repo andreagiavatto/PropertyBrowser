@@ -33,8 +33,33 @@ final class AppModel {
     var isSearching = false
     var searchError: String?
 
+    /// True while a *subsequent* page is being appended (vs. `isSearching`,
+    /// which covers a fresh first-page search).
+    var isLoadingMore = false
+
     /// The URL string of the last run search, stored on pins as their source.
     var lastSearchURLString = ""
+
+    // MARK: Pagination
+
+    /// Rightmove serves results in pages of this size; `index` steps by it.
+    private static let perPage = 24
+
+    /// The search currently being paged through (set by `runSearch`).
+    private var currentSearch: RightmoveSearchURL?
+    /// `index` of the most recently loaded page (0, 24, 48, …).
+    private var loadedIndex = 0
+    /// Total number of pages available, once a page has reported it.
+    private var totalPages: Int?
+
+    /// Whether another page can be fetched: we have an active search, aren't
+    /// already loading, and haven't reached the last known page.
+    var canLoadMore: Bool {
+        guard !isSearching, !isLoadingMore, currentSearch != nil else { return false }
+        guard let totalPages else { return false }
+        let pagesLoaded = (loadedIndex / Self.perPage) + 1
+        return pagesLoaded < totalPages
+    }
 
     // MARK: Refresh
 
@@ -142,16 +167,44 @@ final class AppModel {
 
         isSearching = true
         searchError = nil
+        // Reset pagination for a fresh search.
+        currentSearch = search
+        loadedIndex = 0
+        totalPages = nil
         defer { isSearching = false }
         do {
-            let page = try await client.fetchSearchResults(search)
+            let page = try await client.fetchSearchResults(search, index: 0)
             results = page.properties
             resultCount = page.resultCount?.description
+            totalPages = page.pagination?.total?.int
             lastSearchURLString = url.absoluteString
             persistCriteria()
         } catch {
             results = []
             resultCount = nil
+            currentSearch = nil
+            searchError = "\(error)"
+        }
+    }
+
+    /// Fetches the next page and appends its results to the current list.
+    /// No-op when there's nothing more to load or a load is already in flight.
+    func loadNextPage() async {
+        guard canLoadMore, let search = currentSearch else { return }
+        let nextIndex = loadedIndex + Self.perPage
+
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await client.fetchSearchResults(search, index: nextIndex)
+            // Guard against rare cross-page duplicates so SwiftUI's ForEach keys
+            // stay unique.
+            let existing = Set(results.map(\.listingKey))
+            results.append(contentsOf: page.properties.filter { !existing.contains($0.listingKey) })
+            loadedIndex = nextIndex
+            if let total = page.pagination?.total?.int { totalPages = total }
+            if let count = page.resultCount?.description { resultCount = count }
+        } catch {
             searchError = "\(error)"
         }
     }

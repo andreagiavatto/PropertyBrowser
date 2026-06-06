@@ -23,7 +23,9 @@ struct ZoomableImageViewer: View {
     @FocusState private var focused: Bool
 
     init(urls: [URL], startIndex: Int = 0, title: String? = nil) {
-        self.urls = urls
+        // Upgrade Rightmove media URLs to full resolution for the zoom viewer;
+        // thumbnails and the inline carousel keep their lighter sized variants.
+        self.urls = urls.map(\.rightmoveFullResolution)
         self.title = title
         let safe = urls.isEmpty ? 0 : max(0, min(startIndex, urls.count - 1))
         _index = State(initialValue: safe)
@@ -196,5 +198,23 @@ struct ZoomableImageViewer: View {
         index = (index + direction + urls.count) % urls.count
         scale = 1
         offset = .zero
+    }
+}
+
+// MARK: - Full-resolution Rightmove media URLs
+
+extension URL {
+    /// Rightmove media URLs embed a sized variant before the extension, e.g.
+    /// `…82311642cc59e20b8c9d6f24e4ecc65a_max_656x437.jpeg`. Removing the
+    /// `_max_<W>x<H>` segment requests the original full-size image
+    /// (`…82311642cc59e20b8c9d6f24e4ecc65a.jpeg`). Returns the URL unchanged when
+    /// it doesn't contain that pattern.
+    var rightmoveFullResolution: URL {
+        let s = absoluteString
+        guard let range = s.range(of: "_max_[0-9]+x[0-9]+", options: .regularExpression) else {
+            return self
+        }
+        let stripped = s.replacingCharacters(in: range, with: "")
+        return URL(string: stripped) ?? self
     }
 }

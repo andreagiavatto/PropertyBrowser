@@ -60,10 +60,19 @@ struct SearchView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .onAppear {
+                                // Auto-load the next page as the last card scrolls
+                                // into view.
+                                if property.listingKey == model.results.last?.listingKey {
+                                    Task { await model.loadNextPage() }
+                                }
+                            }
                         }
                     }
                 }
                 .padding()
+
+                paginationFooter
             }
             .overlay {
                 if model.results.isEmpty && !model.isSearching {
@@ -76,6 +85,32 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
+    }
+
+    // MARK: Pagination footer
+
+    /// Shown beneath the grid: a spinner while a page loads, a manual "Load
+    /// more" fallback when there's more to fetch, or an end-of-results note.
+    @ViewBuilder
+    private var paginationFooter: some View {
+        if model.isLoadingMore {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        } else if model.canLoadMore {
+            Button("Load more") {
+                Task { await model.loadNextPage() }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        } else if !model.results.isEmpty {
+            Text("End of results")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
     }
 
     // MARK: Form

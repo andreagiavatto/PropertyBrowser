@@ -105,6 +105,15 @@ final class AppModel {
         }
     }
 
+    /// Hides the typeahead dropdown without altering the current selection.
+    /// Used when the area field loses focus or the user presses Escape.
+    func dismissSuggestions() {
+        lookupTask?.cancel()
+        locationSuggestions = []
+        lookupError = nil
+        isLookingUp = false
+    }
+
     /// Records the user's pick from the dropdown.
     func selectLocation(_ suggestion: LocationSuggestion) {
         criteria.locationIdentifier = suggestion.locationIdentifier

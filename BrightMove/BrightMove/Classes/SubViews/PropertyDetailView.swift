@@ -36,7 +36,6 @@ struct PropertyDetailView: View {
     @AppStorage("detail.section.features")    private var featuresExpanded = false
     @AppStorage("detail.section.lease")       private var leaseExpanded = false
     @AppStorage("detail.section.history")     private var historyExpanded = false
-    @AppStorage("detail.section.historical")  private var historicalExpanded = false
 
     /// Optional PaTMa `sessionid` cookie (only unlocks gated Rent/Yield figures;
     /// price history is returned without it). Set in Settings.
@@ -175,10 +174,9 @@ struct PropertyDetailView: View {
             verdictChecklist(d)
 
             if !priceHistory.isEmpty || isLoadingPriceHistory {
-                DisclosureGroup("Historical prices", isExpanded: $historicalExpanded) {
-                    historicalPrices().padding(.top, 6)
+                section("Price History") {
+                    historicalPrices()
                 }
-                .font(.headline)
             }
 
             // Map + stations (always expanded)

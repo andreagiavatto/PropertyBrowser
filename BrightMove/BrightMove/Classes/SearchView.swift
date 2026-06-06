@@ -8,6 +8,9 @@ struct SearchView: View {
     @Environment(\.modelContext) private var context
     @Query private var pins: [PinnedProperty]
 
+    @FocusState private var areaFieldFocused: Bool
+    @State private var areaFieldHeight: CGFloat = 0
+
     private var pinnedIDs: Set<Int> { Set(pins.map(\.propertyID)) }
 
     // Bedroom picker options: label -> stored value ("" == any, "0" == studio).
@@ -142,8 +145,25 @@ struct SearchView: View {
             HStack {
                 TextField("Town, postcode, or station…", text: model.locationQuery)
                     .textFieldStyle(.roundedBorder)
+                    .focused($areaFieldFocused)
                     .onChange(of: model.wrappedValue.locationQuery) {
                         model.wrappedValue.locationQueryChanged()
+                    }
+                    .onChange(of: areaFieldFocused) {
+                        // Dismiss the dropdown when the field loses focus, but
+                        // defer briefly so a click on a suggestion registers first
+                        // (the click blurs the field before its action runs).
+                        guard !areaFieldFocused else { return }
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 150_000_000)
+                            if !areaFieldFocused {
+                                model.wrappedValue.dismissSuggestions()
+                            }
+                        }
+                    }
+                    .onExitCommand {
+                        // Escape hides the dropdown.
+                        model.wrappedValue.dismissSuggestions()
                     }
                 if model.wrappedValue.isLookingUp {
                     ProgressView().controlSize(.small)
@@ -155,30 +175,53 @@ struct SearchView: View {
             if let err = model.wrappedValue.lookupError {
                 Text(err).font(.caption).foregroundStyle(.secondary)
             }
-
+        }
+        .background(
+            // Measure the area field's own height so the dropdown can be offset
+            // to sit just below it.
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { areaFieldHeight = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, h in areaFieldHeight = h }
+            }
+        )
+        .zIndex(10)
+        .overlay(alignment: .topLeading) {
             if !model.wrappedValue.locationSuggestions.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.wrappedValue.locationSuggestions) { s in
-                        Button {
-                            model.wrappedValue.selectLocation(s)
-                        } label: {
-                            HStack {
-                                Image(systemName: "mappin.circle")
-                                    .foregroundStyle(.secondary)
-                                Text(s.displayName)
-                                Spacer()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.wrappedValue.locationSuggestions) { s in
+                            Button {
+                                model.wrappedValue.selectLocation(s)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "mappin.circle")
+                                        .foregroundStyle(.secondary)
+                                    Text(s.displayName)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 6)
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 6)
+                            .buttonStyle(.plain)
+                            Divider()
                         }
-                        .buttonStyle(.plain)
-                        Divider()
                     }
                 }
-                .background(.quaternary.opacity(0.4))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .frame(maxHeight: 200)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 200, maxHeight: 400)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.quaternary, lineWidth: 1)
+                )
+                .shadow(radius: 8, y: 4)
+                // Drop the list straight down so its top sits just below the area
+                // field, floating over the controls beneath.
+                .offset(y: areaFieldHeight + 4)
             }
         }
     }

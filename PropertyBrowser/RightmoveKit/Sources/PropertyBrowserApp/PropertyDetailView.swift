@@ -22,6 +22,10 @@ struct PropertyDetailView: View {
     @State private var isLoadingFloorArea = false
     @State private var renderedDescription: AttributedString?
 
+    // External (PaTMa) historical prices
+    @State private var priceHistory: [PriceHistoryEntry] = []
+    @State private var isLoadingPriceHistory = false
+
     // Floorplan zoom viewer
     @State private var showFloorplanViewer = false
     @State private var floorplanStartIndex = 0
@@ -32,6 +36,11 @@ struct PropertyDetailView: View {
     @AppStorage("detail.section.features")    private var featuresExpanded = false
     @AppStorage("detail.section.lease")       private var leaseExpanded = false
     @AppStorage("detail.section.history")     private var historyExpanded = false
+    @AppStorage("detail.section.historical")  private var historicalExpanded = false
+
+    /// Optional PaTMa `sessionid` cookie (only unlocks gated Rent/Yield figures;
+    /// price history is returned without it). Set in Settings.
+    @AppStorage("patma.sessionid") private var patmaSessionID = ""
 
     /// Width at which the layout splits into two columns.
     private let twoColumnBreakpoint: CGFloat = 900
@@ -165,6 +174,13 @@ struct PropertyDetailView: View {
             // Verdict checklist (stays here, below the facts)
             verdictChecklist(d)
 
+            if !priceHistory.isEmpty || isLoadingPriceHistory {
+                DisclosureGroup("Historical prices", isExpanded: $historicalExpanded) {
+                    historicalPrices().padding(.top, 6)
+                }
+                .font(.headline)
+            }
+
             // Map + stations (always expanded)
             if let lat = d.location?.lat, let lng = d.location?.lng {
                 section("Location") {
@@ -214,7 +230,7 @@ struct PropertyDetailView: View {
             }
 
             if isPinned, let pin, pricePoints(pin).count >= 2 {
-                DisclosureGroup("Price history", isExpanded: $historyExpanded) {
+                DisclosureGroup("Price history (tracked)", isExpanded: $historyExpanded) {
                     priceHistoryChart(pin).padding(.top, 6)
                 }
                 .font(.headline)
@@ -383,6 +399,62 @@ struct PropertyDetailView: View {
         .frame(height: 200)
     }
 
+    // MARK: - Historical prices (PaTMa)
+
+    /// Chart of recorded prices over time, plus a row-per-change table.
+    /// `priceHistory` arrives newest-first; the chart wants oldest-first.
+    @ViewBuilder
+    private func historicalPrices() -> some View {
+        if isLoadingPriceHistory && priceHistory.isEmpty {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.7)
+                Text("Fetching price history…").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(priceHistory) { entry in
+                    HStack {
+                        Text(entry.date, format: .dateTime.day().month().year())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 110, alignment: .leading)
+                        if entry.isFirstSeen {
+                            Text("First seen").foregroundStyle(.secondary)
+                        } else if let from = entry.fromAmount {
+                            Text("£\(Format.thousands(from))")
+                        }
+                        Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                        if let to = entry.toAmount {
+                            Text("£\(Format.thousands(to))").fontWeight(.medium)
+                        }
+                        if let delta = entry.delta, delta != 0 {
+                            Text("\(delta < 0 ? "−" : "+")£\(Format.thousands(abs(delta)))")
+                                .foregroundStyle(delta < 0 ? .red : .orange)
+                        }
+                        Spacer()
+                    }
+                    .font(.body.monospacedDigit())
+                }
+
+                Text("Source: PaTMa")
+                    .font(.footnote).foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    /// Ask PaTMa for the property's historical prices, reusing the page HTML we
+    /// already fetched. Failures are silent — the section just stays hidden.
+    private func loadPriceHistory(pageURL: URL, html: String) async {
+        isLoadingPriceHistory = true
+        defer { isLoadingPriceHistory = false }
+        let client = PATMAClient(
+            sessionID: patmaSessionID.isEmpty ? nil : patmaSessionID
+        )
+        if let entries = try? await client.priceHistory(pageURL: pageURL, html: html) {
+            priceHistory = entries
+        }
+    }
+
     // MARK: - Price reduction badge
 
     private var reductionBadge: String? {
@@ -444,11 +516,17 @@ struct PropertyDetailView: View {
         detail = nil
         floorArea = nil
         renderedDescription = nil
+        priceHistory = []
 
         do {
-            let d = try await model.client.fetchPropertyDetail(id: propertyID)
+            let page = try await model.client.fetchPropertyDetailPage(id: propertyID)
+            let d = page.detail
             detail = d
             isLoading = false
+
+            // Fetch external historical prices in the background; don't block the
+            // rest of the detail render on it.
+            Task { await loadPriceHistory(pageURL: page.url, html: page.html) }
 
             if isPinned, let snap = TrackedSnapshot(detail: d) {
                 TrackingStore(context: context).apply(snap)

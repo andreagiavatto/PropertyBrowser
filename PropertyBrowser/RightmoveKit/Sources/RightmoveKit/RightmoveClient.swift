@@ -202,11 +202,19 @@ public actor RightmoveClient {
 
     /// Fetches and parses a property's detail page by id.
     public func fetchPropertyDetail(id: Int) async throws -> PropertyDetail {
+        try await fetchPropertyDetailPage(id: id).detail
+    }
+
+    /// Like `fetchPropertyDetail(id:)` but also returns the canonical page URL
+    /// and the raw HTML, so callers can forward the page to a third party (e.g.
+    /// PaTMa's price-history panel) without fetching it a second time.
+    public func fetchPropertyDetailPage(id: Int) async throws -> (detail: PropertyDetail, url: URL, html: String) {
         guard let url = URL(string: "https://www.rightmove.co.uk/properties/\(id)") else {
             throw RightmoveClientError.badURL
         }
         let html = try await fetchHTML(url)
-        return try RightmoveParser.parsePropertyDetail(html: html)
+        let detail = try RightmoveParser.parsePropertyDetail(html: html)
+        return (detail, url, html)
     }
 
     // MARK: Politeness

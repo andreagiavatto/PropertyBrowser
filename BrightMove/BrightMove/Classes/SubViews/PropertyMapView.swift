@@ -48,6 +48,7 @@ struct PropertyMapView: NSViewRepresentable {
         weak var mapView: MKMapView?
 
         private var annotationsByID: [Int: PropertyAnnotation] = [:]
+        private var boundingOverlay: MKPolygon?
         private var lastFitToken: Int = .min
         /// True once the user has panned/zoomed the current result set, which
         /// suppresses auto-fit until the next explicit fit request (new search).
@@ -99,6 +100,9 @@ struct PropertyMapView: NSViewRepresentable {
             }
             if !added.isEmpty { mapView.addAnnotations(added) }
 
+            // Keep the bounding-box overlay in step with the current pins.
+            updateBoundingOverlay(on: mapView)
+
             // Camera framing: honour an explicit fit request unless the user has
             // taken control of the map for this result set.
             if parent.fitToken != lastFitToken {
@@ -130,7 +134,47 @@ struct PropertyMapView: NSViewRepresentable {
             }
         }
 
+        /// Recompute the rectangle enclosing all current pins and swap it in as
+        /// a single overlay. Needs at least two distinct points to be meaningful.
+        private func updateBoundingOverlay(on mapView: MKMapView) {
+            if let existing = boundingOverlay {
+                mapView.removeOverlay(existing)
+                boundingOverlay = nil
+            }
+
+            let coords = annotationsByID.values.map(\.coordinate)
+            guard coords.count >= 2 else { return }
+
+            let lats = coords.map(\.latitude)
+            let lngs = coords.map(\.longitude)
+            guard let minLat = lats.min(), let maxLat = lats.max(),
+                  let minLng = lngs.min(), let maxLng = lngs.max(),
+                  minLat != maxLat || minLng != maxLng else { return }
+
+            let corners = [
+                CLLocationCoordinate2D(latitude: maxLat, longitude: minLng),
+                CLLocationCoordinate2D(latitude: maxLat, longitude: maxLng),
+                CLLocationCoordinate2D(latitude: minLat, longitude: maxLng),
+                CLLocationCoordinate2D(latitude: minLat, longitude: minLng),
+            ]
+            let polygon = MKPolygon(coordinates: corners, count: corners.count)
+            mapView.addOverlay(polygon, level: .aboveRoads)
+            boundingOverlay = polygon
+        }
+
         // MARK: MKMapViewDelegate
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            guard let polygon = overlay as? MKPolygon else {
+                return MKOverlayRenderer(overlay: overlay)
+            }
+            let renderer = MKPolygonRenderer(polygon: polygon)
+            renderer.strokeColor = .controlAccentColor
+            renderer.lineWidth = 1.5
+            renderer.lineDashPattern = [4, 4]
+            renderer.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.06)
+            return renderer
+        }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             if annotation is MKClusterAnnotation {

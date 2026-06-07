@@ -93,13 +93,13 @@ struct SearchView: View {
 
                 Spacer()
 
-                Picker("View", selection: viewModeBinding) {
-                    Image(systemName: "square.grid.2x2").tag(AppModel.SearchViewMode.list)
-                    Image(systemName: "map").tag(AppModel.SearchViewMode.map)
+                Picker("View:", selection: viewModeBinding) {
+                    Label("Grid", image: "square.grid.2x2").tag(AppModel.SearchViewMode.list)
+                    Label("Map", image: "map").tag(AppModel.SearchViewMode.map)
                 }
                 .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                .padding(.horizontal)
+                .padding(.vertical, 4)
             }
             .padding(.horizontal)
             .padding(.top, 8)

@@ -20,6 +20,7 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var model = AppModel()
     @State private var selection: AppSection? = .search
+    @State private var path = NavigationPath()
 
     var body: some View {
         NavigationSplitView {
@@ -30,10 +31,10 @@ struct RootView: View {
             .navigationTitle("PropertyBrowser")
             .frame(minWidth: 180)
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $path) {
                 Group {
                     switch selection ?? .search {
-                    case .search: SearchView()
+                    case .search: SearchView(onSelectProperty: { path.append($0) })
                     case .watchlist: WatchlistView()
                     case .changes: ChangesFeedView()
                     }

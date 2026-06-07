@@ -8,6 +8,10 @@ struct SearchView: View {
     @Environment(\.modelContext) private var context
     @Query private var pins: [PinnedProperty]
 
+    /// Pushes a property detail onto the navigation stack owned by `RootView`.
+    /// Used by the map callout, which can't use a `NavigationLink`.
+    var onSelectProperty: (Int) -> Void = { _ in }
+
     @FocusState private var areaFieldFocused: Bool
     @State private var areaFieldHeight: CGFloat = 0
 
@@ -36,55 +40,136 @@ struct SearchView: View {
                     .padding(.top, 8)
             }
 
-            if let count = model.resultCount {
-                Text("\(count) results — showing \(model.results.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-            }
+            resultsBar
 
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 280), spacing: 16)],
-                    alignment: .leading,
-                    spacing: 16
-                ) {
-                    ForEach(model.results, id: \.listingKey) { property in
-                        if let id = property.propertyID {
-                            NavigationLink(value: id) {
-                                PropertyCard(
-                                    data: property,
-                                    isPinned: pinnedIDs.contains(id),
-                                    onTogglePin: { togglePin(property) }
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear {
-                                // Auto-load the next page as the last card scrolls
-                                // into view.
-                                if property.listingKey == model.results.last?.listingKey {
-                                    Task { await model.loadNextPage() }
-                                }
+            if model.searchViewMode == .list {
+                listSection
+            } else {
+                mapSection
+            }
+        }
+        .navigationTitle("Search")
+    }
+
+    // MARK: Results bar (count + view-mode toggle + map disclosures)
+
+    private var mappedResults: [SearchProperty] {
+        model.results.filter { $0.location?.lat != nil && $0.location?.lng != nil }
+    }
+
+    private var unmappedCount: Int { model.results.count - mappedResults.count }
+
+    private var viewModeBinding: Binding<AppModel.SearchViewMode> {
+        Binding(
+            get: { model.searchViewMode },
+            set: { newValue in
+                if newValue == .map { model.enterMapMode() } else { model.exitMapMode() }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var resultsBar: some View {
+        if model.resultCount != nil || !model.results.isEmpty {
+            HStack(spacing: 12) {
+                if let count = model.resultCount {
+                    Text("\(count) results — showing \(model.results.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if model.searchViewMode == .map {
+                    if unmappedCount > 0 {
+                        Text("\(unmappedCount) not shown on map")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.didCapMapLoad {
+                        Text("showing first \(model.results.count) — narrow your search")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Picker("View", selection: viewModeBinding) {
+                    Image(systemName: "square.grid.2x2").tag(AppModel.SearchViewMode.list)
+                    Image(systemName: "map").tag(AppModel.SearchViewMode.map)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: List + map sections
+
+    @ViewBuilder
+    private var listSection: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 280), spacing: 16)],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(model.results, id: \.listingKey) { property in
+                    if let id = property.propertyID {
+                        NavigationLink(value: id) {
+                            PropertyCard(
+                                data: property,
+                                isPinned: pinnedIDs.contains(id),
+                                onTogglePin: { togglePin(property) }
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .onAppear {
+                            // Auto-load the next page as the last card scrolls
+                            // into view.
+                            if property.listingKey == model.results.last?.listingKey {
+                                Task { await model.loadNextPage() }
                             }
                         }
                     }
                 }
-                .padding()
-
-                paginationFooter
             }
-            .overlay {
-                if model.results.isEmpty && !model.isSearching {
-                    ContentUnavailableView(
-                        "No results",
-                        systemImage: "magnifyingglass",
-                        description: Text("Set your search criteria above and tap Search.")
-                    )
-                }
+            .padding()
+
+            paginationFooter
+        }
+        .overlay {
+            if model.results.isEmpty && !model.isSearching {
+                ContentUnavailableView(
+                    "No results",
+                    systemImage: "magnifyingglass",
+                    description: Text("Set your search criteria above and tap Search.")
+                )
             }
         }
-        .navigationTitle("Search")
+    }
+
+    @ViewBuilder
+    private var mapSection: some View {
+        PropertyMapView(
+            properties: mappedResults,
+            pinnedIDs: pinnedIDs,
+            fitToken: model.fitToken,
+            fallbackCenter: nil,
+            onSelect: { id in onSelectProperty(id) },
+            onTogglePin: { id in togglePinByID(id) }
+        )
+        .overlay {
+            if mappedResults.isEmpty && !model.isSearching {
+                ContentUnavailableView(
+                    "No mappable results",
+                    systemImage: "map",
+                    description: Text("None of these results have a location to show on the map.")
+                )
+            }
+        }
     }
 
     // MARK: Pagination footer
@@ -312,6 +397,11 @@ struct SearchView: View {
                 model.wrappedValue.criteria.propertyTypes = types
             }
         )
+    }
+
+    private func togglePinByID(_ id: Int) {
+        guard let property = model.results.first(where: { $0.propertyID == id }) else { return }
+        togglePin(property)
     }
 
     private func togglePin(_ property: SearchProperty) {

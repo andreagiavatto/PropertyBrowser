@@ -37,6 +37,28 @@ final class AppModel {
     /// which covers a fresh first-page search).
     var isLoadingMore = false
 
+    // MARK: Map view
+
+    /// Whether the search results show as a list grid or a map. Session-only
+    /// (intentionally not persisted across launches) and held here, on the
+    /// model, so it survives `RootView` rebuilding `SearchView` when the user
+    /// switches sidebar sections.
+    enum SearchViewMode { case list, map }
+    var searchViewMode: SearchViewMode = .list
+
+    /// Bumped to ask the map to re-fit its camera to the current pins (on a
+    /// fresh search completing, or on first entering map mode).
+    var fitToken = 0
+
+    /// True when the map's auto-load stopped because it hit `mapPageCap` while
+    /// more results were still available — drives the "showing first N" note.
+    private(set) var didCapMapLoad = false
+
+    /// Most results the map will auto-load, expressed in pages (24 each).
+    private static let mapPageCap = 10        // ~240 results
+
+    private var mapLoadTask: Task<Void, Never>?
+
     /// The URL string of the last run search, stored on pins as their source.
     var lastSearchURLString = ""
 
@@ -171,6 +193,7 @@ final class AppModel {
         currentSearch = search
         loadedIndex = 0
         totalPages = nil
+        didCapMapLoad = false
         defer { isSearching = false }
         do {
             let page = try await client.fetchSearchResults(search, index: 0)
@@ -179,6 +202,12 @@ final class AppModel {
             totalPages = page.pagination?.total?.int
             lastSearchURLString = url.absoluteString
             persistCriteria()
+            // Stay in map mode across a fresh search (decision 8): re-frame the
+            // camera to the new results and resume the capped auto-load.
+            if searchViewMode == .map {
+                fitToken &+= 1
+                startMapAutoLoad()
+            }
         } catch {
             results = []
             resultCount = nil
@@ -208,6 +237,49 @@ final class AppModel {
             searchError = "\(error)"
         }
     }
+
+    // MARK: Map mode
+
+    /// Switch the results region to the map and begin streaming in the
+    /// remaining pages (capped) so the map is spatially complete.
+    func enterMapMode() {
+        searchViewMode = .map
+        fitToken &+= 1
+        startMapAutoLoad()
+    }
+
+    /// Switch back to the list. The in-flight page (if any) is cancelled;
+    /// pagination state is preserved, so re-entering map resumes without
+    /// refetching what's already loaded.
+    func exitMapMode() {
+        searchViewMode = .list
+        mapLoadTask?.cancel()
+    }
+
+    /// Drives `loadNextPage()` until there's nothing left, the page cap is hit,
+    /// or the user leaves map mode. Idempotent across toggles because it leans
+    /// entirely on the existing `canLoadMore` / `loadedIndex` counters, and
+    /// polite to Rightmove via a short inter-page delay.
+    private func startMapAutoLoad() {
+        mapLoadTask?.cancel()
+        mapLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.searchViewMode == .map,
+                  self.canLoadMore,
+                  self.loadedPageCount < Self.mapPageCap {
+                await self.loadNextPage()
+                if Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            // We capped if we stopped with pages still available.
+            self.didCapMapLoad = self.searchViewMode == .map
+                && self.canLoadMore
+                && self.loadedPageCount >= Self.mapPageCap
+        }
+    }
+
+    /// Number of result pages loaded so far (1-based).
+    private var loadedPageCount: Int { (loadedIndex / Self.perPage) + 1 }
 
     // MARK: Persistence
 

@@ -203,7 +203,7 @@ struct PropertyDetailView: View {
                     stationMap(lat: lat, lng: lng, title: Format.oneLine(d.address?.displayAddress))
                 }
                 if !stationService.stations.isEmpty || stationService.isLoading {
-                    section("Nearest stations") { stationList() }
+                    section("Nearby transport") { stationList() }
                 }
             }
 
@@ -316,7 +316,9 @@ struct PropertyDetailView: View {
     private func verdictChecklist(_ d: PropertyDetail) -> some View {
         let hasFloorplan  = !(d.floorplans ?? []).isEmpty
         let hasArea       = floorArea != nil && floorArea?.isApproximate == false
-        let stationNearby = stationService.stations.first?.isWithin500m == true
+        // Only a true station (rail/Tube/tram/ferry) satisfies this — not a bus stop.
+        let stationNearby = stationService.stations
+            .first { $0.type.isStation }?.isWithin500m == true
 
         HStack(spacing: 16) {
             VerdictDot(label: "Floorplan",     met: hasFloorplan)
@@ -344,8 +346,8 @@ struct PropertyDetailView: View {
                     .stroke(.blue.opacity(0.75), lineWidth: 3)
             }
             ForEach(stationService.stations) { station in
-                Marker(stationMarkerLabel(station), systemImage: "tram.fill", coordinate: station.coordinate)
-                    .tint(.blue)
+                Marker(stationMarkerLabel(station), systemImage: station.type.systemImageName, coordinate: station.coordinate)
+                    .tint(station.type.tint)
             }
         }
         .frame(height: 400)
@@ -370,7 +372,9 @@ struct PropertyDetailView: View {
         VStack(spacing: 6) {
             ForEach(stationService.stations) { station in
                 HStack {
-                    Image(systemName: "tram.fill").foregroundStyle(.blue)
+                    Image(systemName: station.type.systemImageName)
+                        .foregroundStyle(station.type.tint)
+                        .frame(width: 22)
                     Text(station.name).font(.body)
                     Spacer()
                     if let info = station.formattedDistanceAndDuration {

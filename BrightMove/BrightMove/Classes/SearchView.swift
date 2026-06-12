@@ -241,6 +241,15 @@ struct SearchView: View {
                         .frame(width: 120)
                 }
 
+                labeledControl("Sort") {
+                    Picker("", selection: model.criteria.sortOrder) {
+                        ForEach(SortOrder.allCases) { order in
+                            Text(order.label).tag(order)
+                        }
+                    }
+                    .labelsHidden()
+                }
+
                 Spacer()
 
                 Button {

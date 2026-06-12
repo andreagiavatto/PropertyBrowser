@@ -15,12 +15,14 @@ public final class TrackingStore {
     /// Convenience: an in-memory store, handy for previews and tests.
     public static func inMemory() throws -> TrackingStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: PinnedProperty.self, PropertyEvent.self, configurations: config)
+        let container = try ModelContainer(
+            for: PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self,
+            configurations: config)
         return TrackingStore(context: ModelContext(container))
     }
 
     public static var schema: [any PersistentModel.Type] {
-        [PinnedProperty.self, PropertyEvent.self]
+        [PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self]
     }
 
     // MARK: Queries

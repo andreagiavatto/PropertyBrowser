@@ -66,6 +66,8 @@ final class SearchCriteriaTests: XCTestCase {
         XCTAssertEqual(items["maxPrice"], "500000")
         XCTAssertNil(items["minPrice"] ?? nil)              // omitted when unset
         XCTAssertEqual(items["propertyTypes"], "detached,semi-detached")
+        // Sort is always emitted; defaults to highest price ("2").
+        XCTAssertEqual(items["sortType"], "2")
     }
 
     func testCriteriaOmitsUnsetFilters() throws {
@@ -76,7 +78,20 @@ final class SearchCriteriaTests: XCTestCase {
         )
         let search = try XCTUnwrap(RightmoveSearchURL(criteria: criteria))
         let names = Set(search.queryItems.map(\.name))
-        XCTAssertEqual(names, ["locationIdentifier", "radius"])
+        // sortType is always present even when every optional filter is unset.
+        XCTAssertEqual(names, ["locationIdentifier", "radius", "sortType"])
+    }
+
+    func testCriteriaEmitsChosenSortType() throws {
+        for order in SortOrder.allCases {
+            let criteria = RightmoveSearchCriteria(
+                locationIdentifier: "REGION^85386", displayName: "Richmond",
+                radius: .one, sortOrder: order
+            )
+            let search = try XCTUnwrap(RightmoveSearchURL(criteria: criteria))
+            let items = Dictionary(uniqueKeysWithValues: search.queryItems.map { ($0.name, $0.value) })
+            XCTAssertEqual(items["sortType"], order.rawValue)
+        }
     }
 
     func testCriteriaWithoutLocationFailsToBuild() {
@@ -103,10 +118,36 @@ final class SearchCriteriaTests: XCTestCase {
             minBedrooms: "3",
             minPrice: "250000",
             maxPrice: "750000",
-            propertyTypes: [.flat, .terraced]
+            propertyTypes: [.flat, .terraced],
+            sortOrder: .newestListed
         )
         let data = try JSONEncoder().encode(criteria)
         let restored = try JSONDecoder().decode(RightmoveSearchCriteria.self, from: data)
         XCTAssertEqual(criteria, restored)
+        XCTAssertEqual(restored.sortOrder, .newestListed)
+    }
+
+    /// Criteria persisted before `sortOrder` existed (no key in the JSON) must
+    /// still decode, defaulting to highest price rather than failing the whole
+    /// decode and wiping the user's saved search.
+    func testLegacyCriteriaWithoutSortOrderDecodes() throws {
+        let legacyJSON = """
+        {
+          "locationIdentifier": "REGION^85386",
+          "displayName": "Richmond, Surrey",
+          "radius": "1.0",
+          "minBedrooms": "2",
+          "propertyTypes": ["flat"]
+        }
+        """
+        let restored = try JSONDecoder().decode(
+            RightmoveSearchCriteria.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(restored.sortOrder, .highestPrice)
+        XCTAssertEqual(restored.locationIdentifier, "REGION^85386")
+        XCTAssertEqual(restored.minBedrooms, "2")
+    }
+
+    func testDefaultSortOrderIsHighestPrice() {
+        XCTAssertEqual(RightmoveSearchCriteria().sortOrder, .highestPrice)
     }
 }

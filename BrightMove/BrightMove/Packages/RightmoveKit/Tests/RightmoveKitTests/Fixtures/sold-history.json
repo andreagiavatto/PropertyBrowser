@@ -1,0 +1,11 @@
+{
+  "soldPropertyUrlPath": "/house-prices/details/c39de1da-978a-4a48-801e-57cb186a972d",
+  "soldPropertyTransactions": [
+    { "year": "2016", "soldPrice": "£550,000", "percentageChange": "+76%" },
+    { "year": "2010", "soldPrice": "£312,500", "percentageChange": "+16%" },
+    { "year": "2006", "soldPrice": "£269,950", "percentageChange": "+63%" },
+    { "year": "2001", "soldPrice": "£166,000", "percentageChange": "0%" },
+    { "year": "2000", "soldPrice": "£166,000", "percentageChange": "+116%" },
+    { "year": "1995", "soldPrice": "£77,000", "percentageChange": "" }
+  ]
+}

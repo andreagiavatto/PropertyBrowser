@@ -18,14 +18,23 @@ public struct PriceHistoryEntry: Identifiable, Equatable, Sendable {
     public let toAmount: Int?
     /// True when the "from" cell was "First seen" rather than a price.
     public let isFirstSeen: Bool
+    /// Non-numeric "from" cell text (e.g. "Unavailable"), when there's no price
+    /// and it isn't a first sighting. `nil` when `fromAmount` carries the value.
+    public let fromLabel: String?
+    /// Non-numeric "to" cell text (e.g. "Unavailable (Under offer)"), when there's
+    /// no price. `nil` when `toAmount` carries the value.
+    public let toLabel: String?
 
-    public var id: String { "\(date.timeIntervalSince1970)-\(toAmount ?? 0)" }
+    public var id: String { "\(date.timeIntervalSince1970)-\(toAmount ?? 0)-\(toLabel ?? "")" }
 
-    public init(date: Date, fromAmount: Int?, toAmount: Int?, isFirstSeen: Bool) {
+    public init(date: Date, fromAmount: Int?, toAmount: Int?, isFirstSeen: Bool,
+                fromLabel: String? = nil, toLabel: String? = nil) {
         self.date = date
         self.fromAmount = fromAmount
         self.toAmount = toAmount
         self.isFirstSeen = isFirstSeen
+        self.fromLabel = fromLabel
+        self.toLabel = toLabel
     }
 
     /// Signed change for this row (negative = reduction), `nil` for first sighting.
@@ -55,11 +64,18 @@ public enum PATMAPriceHistoryParser {
             let fromText = cells[1]
             let toText = cells[3]
             let isFirstSeen = fromText.range(of: "first seen", options: .caseInsensitive) != nil
+            let fromAmount = isFirstSeen ? nil : amount(from: fromText)
+            let toAmount = amount(from: toText)
             return PriceHistoryEntry(
                 date: date,
-                fromAmount: isFirstSeen ? nil : amount(from: fromText),
-                toAmount: amount(from: toText),
-                isFirstSeen: isFirstSeen
+                fromAmount: fromAmount,
+                toAmount: toAmount,
+                isFirstSeen: isFirstSeen,
+                // Preserve non-numeric states (e.g. "Unavailable", "Unavailable
+                // (Under offer)") that carry no digits, so the UI can show them
+                // instead of a blank cell.
+                fromLabel: (isFirstSeen || fromAmount != nil) ? nil : label(from: fromText),
+                toLabel: toAmount != nil ? nil : label(from: toText)
             )
         }
     }
@@ -108,5 +124,13 @@ public enum PATMAPriceHistoryParser {
     private static func amount(from text: String) -> Int? {
         let digits = text.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         return digits.isEmpty ? nil : Int(digits)
+    }
+
+    /// Non-empty, decoded cell text (e.g. "Unavailable") for non-numeric states;
+    /// `nil` for blank cells or bare arrows.
+    private static func label(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: CharacterSet(charactersIn: " →>-"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

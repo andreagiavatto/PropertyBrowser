@@ -66,6 +66,51 @@ final class PATMAPriceHistoryTests: XCTestCase {
         XCTAssertEqual(entries.first?.toAmount, 575_000)
     }
 
+    /// PaTMa renders "Unavailable" / "Unavailable (Under offer)" in price cells
+    /// when a side has no price. These must be preserved as labels, not dropped.
+    func testParsesUnavailableStates() {
+        let html = """
+        <table>
+          <tr>
+            <td>23 Apr 2026</td>
+            <td>Unavailable</td>
+            <td>&rarr;</td>
+            <td>&pound;545,000</td>
+          </tr>
+          <tr>
+            <td>3 Apr 2026</td>
+            <td>&pound;545,000</td>
+            <td>&rarr;</td>
+            <td>Unavailable (Under offer)</td>
+          </tr>
+        </table>
+        """
+        let entries = PATMAPriceHistoryParser.parse(html: html)
+        XCTAssertEqual(entries.count, 2)
+
+        let relisted = entries[0]
+        XCTAssertNil(relisted.fromAmount)
+        XCTAssertEqual(relisted.fromLabel, "Unavailable")
+        XCTAssertEqual(relisted.toAmount, 545_000)
+        XCTAssertNil(relisted.toLabel)
+        XCTAssertFalse(relisted.isFirstSeen)
+
+        let underOffer = entries[1]
+        XCTAssertEqual(underOffer.fromAmount, 545_000)
+        XCTAssertNil(underOffer.fromLabel)
+        XCTAssertNil(underOffer.toAmount)
+        XCTAssertEqual(underOffer.toLabel, "Unavailable (Under offer)")
+    }
+
+    /// Numeric rows must not pick up spurious labels.
+    func testNumericRowsHaveNoLabels() {
+        let entries = PATMAPriceHistoryParser.parse(html: panelHTML)
+        XCTAssertNil(entries[0].fromLabel)
+        XCTAssertNil(entries[0].toLabel)
+        XCTAssertNil(entries[1].fromLabel) // first-seen
+        XCTAssertNil(entries[1].toLabel)
+    }
+
     func testEmptyForUnrelatedHTML() {
         XCTAssertTrue(PATMAPriceHistoryParser.parse(html: "<div>no tables here</div>").isEmpty)
     }

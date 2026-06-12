@@ -4,6 +4,9 @@ import Foundation
 /// (`window.__PAGE_MODEL`, flatted-encoded).
 public struct PropertyDetail: Decodable {
     public let id: LossyNumber
+    /// Encrypted id from the page model; pairs with `address.deliveryPointId`
+    /// to fetch the property's sold-price history (`SoldHistoryClient`).
+    public let encId: String?
     public let status: ListingStatus?
     public let prices: DetailPrices?
     public let address: Address?
@@ -18,10 +21,39 @@ public struct PropertyDetail: Decodable {
     public let transactionType: String?
     public let tenure: Tenure?
     public let text: PropertyText?
+    /// Floor-area figures Rightmove reports for the listing (usually one `sqft`
+    /// and one `sqm` entry). Absent when the agent didn't supply a size.
+    public let sizings: [PropertySizing]?
     /// e.g. ["SOLD_STC"], ["UNDER_OFFER"]; empty/absent when available.
     public let tags: [String]?
 
     public var propertyID: Int? { id.int }
+
+    /// Authoritative floor area in square metres taken straight from the
+    /// listing's `sizings`, or `nil` when the listing reports no usable size.
+    /// Prefers an explicit square-metre figure; otherwise converts square feet
+    /// (1 sq ft = 0.092903 m²). Use this in preference to reading the floorplan
+    /// image, which can mis-OCR.
+    ///
+    /// `sizings` can also carry land units — real pages include "ha" (hectares)
+    /// and "ac" (acres) alongside "sqm"/"sqft" — so units are matched exactly
+    /// rather than by substring, and anything that isn't a building floor area
+    /// is ignored.
+    public var floorAreaSqM: Double? {
+        guard let sizings else { return nil }
+
+        func size(unit: String) -> Double? {
+            guard let s = sizings.first(where: { ($0.unit ?? "").lowercased() == unit }) else { return nil }
+            // minimumSize is the representative value (min == max for a single
+            // figure); fall back to whichever side is present.
+            let v = s.minimumSize?.double ?? s.maximumSize?.double
+            return (v ?? 0) > 0 ? v : nil
+        }
+
+        if let sqm = size(unit: "sqm") { return sqm }
+        if let sqft = size(unit: "sqft") { return sqft * 0.092903 }
+        return nil
+    }
 
     /// Unified market state, combining `tags` (Sold STC / Under Offer) and
     /// `status` (full removal).
@@ -56,6 +88,15 @@ public struct Address: Decodable {
     public let incode: String?
     public let countryCode: String?
     public let ukCountry: String?
+    /// Royal Mail delivery-point id; pairs with `PropertyDetail.encId` for the
+    /// sold-history API.
+    public let deliveryPointId: LossyNumber?
+
+    /// Full postcode ("N8" + "7RA" → "N8 7RA"), when both parts are present.
+    public var fullPostcode: String? {
+        guard let out = outcode, !out.isEmpty, let inc = incode, !inc.isEmpty else { return nil }
+        return "\(out) \(inc)"
+    }
 }
 
 public struct ListingHistory: Decodable {
@@ -84,6 +125,15 @@ public struct ResizedImageUrls: Decodable {
 
 public struct Tenure: Decodable {
     public let tenureType: String?
+}
+
+/// One floor-area figure from `propertyData.sizings`, e.g.
+/// `{ "unit": "sqm", "minimumSize": 85, "maximumSize": 85 }`.
+public struct PropertySizing: Decodable {
+    /// Rightmove's unit token, typically "sqft" or "sqm".
+    public let unit: String?
+    public let minimumSize: LossyNumber?
+    public let maximumSize: LossyNumber?
 }
 
 public struct PropertyText: Decodable {

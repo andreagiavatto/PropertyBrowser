@@ -1,0 +1,15 @@
+{
+  "uprn": 100021468190,
+  "postcode": "SW2 5SG",
+  "post_town": "LONDON",
+  "built_form": 4,
+  "property_type": 0,
+  "address_line_1": "10 Acre Lane",
+  "dwelling_type": "Mid-terrace house",
+  "total_floor_area": 84,
+  "registration_date": "2021-03-11",
+  "habitable_room_count": 4,
+  "heated_room_count": 4,
+  "current_energy_efficiency_band": "D",
+  "schema_type": "RdSAP-Schema-21.0.1"
+}

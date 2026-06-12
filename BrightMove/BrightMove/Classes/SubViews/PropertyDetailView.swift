@@ -11,6 +11,7 @@ struct PropertyDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.modelContext) private var context
     @Query private var pins: [PinnedProperty]
+    @Query private var resolvedAddresses: [ResolvedAddress]
 
     @State private var detail: PropertyDetail?
     @State private var isLoading = true
@@ -29,6 +30,14 @@ struct PropertyDetailView: View {
     // Floorplan zoom viewer
     @State private var showFloorplanViewer = false
     @State private var floorplanStartIndex = 0
+
+    // Address resolution (EPC + Street View)
+    @State private var isResolving = false
+    @State private var resolveOutcome: ResolveOutcome?
+
+    // Land Registry civic-number cross-check (runs on candidate selection)
+    @State private var isCrossChecking = false
+    @State private var civicMatch: CivicNumberLookup.Result?
 
     // Collapsible-section state, remembered app-wide (essentials stay expanded;
     // these four start collapsed).
@@ -63,6 +72,13 @@ struct PropertyDetailView: View {
         }
         .navigationTitle(Format.oneLine(detail?.address?.displayAddress))
         .toolbar {
+            if let url = rightmoveURL(forID: propertyID) {
+                ToolbarItem(placement: .primaryAction) {
+                    ShareLink(item: url, subject: Text(Format.oneLine(detail?.address?.displayAddress))) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button(action: togglePin) {
                     Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.fill" : "pin")
@@ -90,7 +106,6 @@ struct PropertyDetailView: View {
                     ScrollView {
                         detailsColumn(d)
                             .padding(24)
-                            .frame(maxWidth: 640, alignment: .leading)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -173,6 +188,9 @@ struct PropertyDetailView: View {
             // Verdict checklist (stays here, below the facts)
             verdictChecklist(d)
 
+            // Full-address resolver (EPC match + Street View confirm)
+            section("Full address") { addressResolver(d) }
+
             if !priceHistory.isEmpty || isLoadingPriceHistory {
                 section("Price History") {
                     historicalPrices()
@@ -196,22 +214,42 @@ struct PropertyDetailView: View {
 
             // Collapsible sections
             if renderedDescription != nil || d.text?.description?.isEmpty == false {
-                DisclosureGroup("Description", isExpanded: $descriptionExpanded) {
-                    descriptionBody(d).padding(.top, 6)
-                }
-                .font(.headline)
+                DisclosureGroup(
+                    isExpanded: $descriptionExpanded) {
+                        descriptionBody(d)
+                            .padding(.top, 6)
+                    } label: {
+                        Text("Description")
+                            .font(.title2).fontWeight(.semibold)
+                            .clipShape(Rectangle())
+                            .onTapGesture {
+                                descriptionExpanded.toggle()
+                            }
+                    }
             }
 
             if let features = d.keyFeatures, !features.isEmpty {
-                DisclosureGroup("Key features", isExpanded: $featuresExpanded) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(features, id: \.self) { f in
-                            Label(f, systemImage: "checkmark.circle").font(.body)
+                DisclosureGroup(
+                    isExpanded: $featuresExpanded) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(features, id: \.self) { f in
+                                Label(f, systemImage: "checkmark.circle").font(.body)
+                            }
                         }
+                        .font(.title3)
+                        .padding(.top, 6)
+                        .clipShape(Rectangle())
+                        .onTapGesture {
+                            featuresExpanded.toggle()
+                        }
+                    } label: {
+                        Text("Key features")
+                            .font(.title2).fontWeight(.semibold)
+                            .clipShape(Rectangle())
+                            .onTapGesture {
+                                featuresExpanded.toggle()
+                            }
                     }
-                    .padding(.top, 6)
-                }
-                .font(.headline)
             }
 
             let leaseTerms = leaseTerms(d)
@@ -368,9 +406,9 @@ struct PropertyDetailView: View {
     @ViewBuilder
     private func descriptionBody(_ d: PropertyDetail) -> some View {
         if let attr = renderedDescription {
-            Text(attr).font(.body).textSelection(.enabled)
+            Text(String(attr.characters[...]).trimmingCharacters(in: .whitespacesAndNewlines)).font(.title3).textSelection(.enabled)
         } else if let raw = d.text?.description, !raw.isEmpty {
-            Text(raw).font(.body).textSelection(.enabled)
+            Text(raw).font(.title3).textSelection(.enabled)
         }
     }
 
@@ -420,10 +458,14 @@ struct PropertyDetailView: View {
                             Text("First seen").foregroundStyle(.secondary)
                         } else if let from = entry.fromAmount {
                             Text("£\(Format.thousands(from))")
+                        } else if let label = entry.fromLabel {
+                            Text(label).foregroundStyle(.secondary)
                         }
                         Image(systemName: "arrow.right").foregroundStyle(.secondary)
                         if let to = entry.toAmount {
                             Text("£\(Format.thousands(to))").fontWeight(.medium)
+                        } else if let label = entry.toLabel {
+                            Text(label).foregroundStyle(.secondary)
                         }
                         if let delta = entry.delta, delta != 0 {
                             Text("\(delta < 0 ? "−" : "+")£\(Format.thousands(abs(delta)))")
@@ -471,12 +513,194 @@ struct PropertyDetailView: View {
         return "Reduced \(reductions.count)×\(totalDrop)"
     }
 
+    // MARK: - Address resolver
+
+    private var cachedResolution: ResolvedAddress? {
+        resolvedAddresses.first { $0.propertyID == propertyID }
+    }
+
+    @ViewBuilder
+    private func addressResolver(_ d: PropertyDetail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let cached = cachedResolution, !cached.candidates.isEmpty {
+                ForEach(cached.candidates) { candidate in
+                    candidateRow(candidate, cached: cached, detail: d)
+                }
+                Text(resolverFootnote(cached))
+                    .font(.footnote).foregroundStyle(.tertiary)
+                civicCrossCheckView
+            } else if isResolving {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Matching sold prices & records…").foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            } else if case .noMatch(let fallback)? = resolveOutcome {
+                Text("No EPC certificate matched on this street.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if let fallback {
+                    Link(destination: fallback) {
+                        Label("Open Street View at the pin", systemImage: "mappin.and.ellipse")
+                    }
+                    .font(.callout)
+                }
+            } else if case .insufficientInput? = resolveOutcome {
+                Text("Not enough to resolve — this listing is missing a postcode or street.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else if case .failed(let message)? = resolveOutcome {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+            } else {
+                Text("Match this listing to a real address using sold-price history and EPC records.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task { await resolveAddress(d) }
+            } label: {
+                Label(cachedResolution == nil ? "Resolve address" : "Re-resolve",
+                      systemImage: "location.magnifyingglass")
+            }
+            .disabled(isResolving)
+        }
+    }
+
+    /// Land Registry sold-price cross-check, shown after the user picks a
+    /// candidate. Corroborates the exact civic number from the listing's sale
+    /// history, or offers the close matches when it isn't conclusive.
+    @ViewBuilder
+    private var civicCrossCheckView: some View {
+        if isCrossChecking {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.7)
+                Text("Cross-checking sold prices with Land Registry…")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        } else if let result = civicMatch {
+            if let best = result.best {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Land Registry match: \(civicLine(best))")
+                            .font(.callout.weight(.semibold))
+                        if let price = best.lastSoldPrice, let year = best.lastSoldYear {
+                            Text("last sold £\(price.formatted()) in \(String(year)) · \(best.matchedTransactions) matching \(best.matchedTransactions == 1 ? "sale" : "sales")")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                }
+            } else if !result.ranked.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Possible numbers from sold-price history:")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    ForEach(Array(result.ranked.prefix(3).enumerated()), id: \.offset) { _, id in
+                        Text("· \(civicLine(id))")
+                            .font(.footnote).foregroundStyle(.tertiary)
+                    }
+                }
+            } else {
+                Text("No Land Registry sold-price match for this postcode.")
+                    .font(.footnote).foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func civicLine(_ id: PricePaidMatcher.Identification) -> String {
+        let parts: [String] = [id.civicLabel, id.street ?? ""]
+        return parts.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    private func resolverFootnote(_ cached: ResolvedAddress) -> String {
+        let byLandRegistry = cached.method == "landregistry"
+        if cached.confirmation == .confirmed {
+            return byLandRegistry
+                ? "Confirmed by you · matched on Land Registry sold prices"
+                : "Confirmed by you · ranked by EPC match"
+        }
+        return byLandRegistry
+            ? "Matched on Land Registry sold prices — open Street View to confirm, then pick the match."
+            : "Best guess from EPC — open Street View to confirm, then pick the match."
+    }
+
+    @ViewBuilder
+    private func candidateRow(_ candidate: StoredCandidate, cached: ResolvedAddress,
+                              detail: PropertyDetail) -> some View {
+        let isChosen = cached.confirmation == .confirmed && candidate.address == cached.resolvedAddress
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Image(systemName: isChosen ? "checkmark.seal.fill" : "house")
+                    .foregroundStyle(isChosen ? .green : .secondary)
+                Text(candidate.address).font(.body.weight(isChosen ? .semibold : .regular))
+                Spacer()
+                Text("\(Int((candidate.score * 100).rounded()))%")
+                    .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            if !candidate.matchedSignals.isEmpty {
+                Text(candidate.matchedSignals.joined(separator: " · "))
+                    .font(.footnote).foregroundStyle(.tertiary)
+            }
+            HStack(spacing: 12) {
+                if let url = candidate.streetViewURL {
+                    Link(destination: url) {
+                        Label("Street View", systemImage: "binoculars")
+                    }
+                    .font(.callout)
+                }
+                if let url = candidate.rightmoveHistoryURL {
+                    Link(destination: url) {
+                        Label("Previous listings", systemImage: "clock.arrow.circlepath")
+                    }
+                    .font(.callout)
+                }
+                if !isChosen {
+                    Button {
+                        confirmAddress(candidate, detail: detail)
+                    } label: {
+                        Label("This one", systemImage: "checkmark.circle")
+                    }
+                    .font(.callout)
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+        .padding(10)
+        .background(isChosen ? Color.green.opacity(0.08) : Color.secondary.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func resolveAddress(_ d: PropertyDetail) async {
+        isResolving = true
+        defer { isResolving = false }
+        civicMatch = nil   // stale once the candidate list changes
+        let store = ResolvedAddressStore(context: context)
+        resolveOutcome = await AddressResolver.resolve(detail: d, floorArea: floorArea, store: store)
+    }
+
+    private func confirmAddress(_ candidate: StoredCandidate, detail: PropertyDetail) {
+        ResolvedAddressStore(context: context).confirm(propertyID: propertyID, choosing: candidate)
+        // Candidates resolved via Land Registry already embed the sold-price
+        // match, so only run the cross-check when resolution fell back to EPC.
+        if cachedResolution?.method != "landregistry" {
+            Task { await crossCheckCivicNumber(detail) }
+        }
+    }
+
+    private func crossCheckCivicNumber(_ d: PropertyDetail) async {
+        isCrossChecking = true
+        defer { isCrossChecking = false }
+        civicMatch = await AddressResolver.crossCheckCivicNumber(detail: d)
+    }
+
     // MARK: - Section helper
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.title3)
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
             content()
         }
     }
@@ -538,17 +762,25 @@ struct PropertyDetailView: View {
             let floorURL = d.floorplans?.first?.url.flatMap(URL.init(string:))
             let price    = d.prices?.parsedAmount
             let ppsf     = d.prices?.pricePerSqFt
+            // Prefer the floor area Rightmove already reports in the listing.
+            // Only read the floorplan image when the listing carries no usable
+            // size — the OCR figure is sometimes wrong, so it's a last resort.
+            let responseArea = d.floorAreaSqM.map { FloorArea(sqm: $0, isApproximate: false) }
+
+            func resolveArea() async -> FloorArea? {
+                if let responseArea { return responseArea }
+                return await FloorplanAnalyser.extract(
+                    floorplanURL: floorURL, totalPriceGBP: price, pricePerSqFtString: ppsf)
+            }
 
             if let lat = d.location?.lat, let lng = d.location?.lng {
                 let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                async let areaResult = FloorplanAnalyser.extract(
-                    floorplanURL: floorURL, totalPriceGBP: price, pricePerSqFtString: ppsf)
+                async let areaResult = resolveArea()
                 async let stationTask: Void = stationService.load(near: coord)
                 let (area, _) = await (areaResult, stationTask)
                 floorArea = area
             } else {
-                floorArea = await FloorplanAnalyser.extract(
-                    floorplanURL: floorURL, totalPriceGBP: price, pricePerSqFtString: ppsf)
+                floorArea = await resolveArea()
             }
             isLoadingFloorArea = false
 

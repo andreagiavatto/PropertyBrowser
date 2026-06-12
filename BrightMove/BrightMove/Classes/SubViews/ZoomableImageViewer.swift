@@ -44,7 +44,7 @@ struct ZoomableImageViewer: View {
             Divider()
             controls
         }
-        .frame(minWidth: 1024, minHeight: 768)
+        .frame(minWidth: 1280, minHeight: 1024)
         .background(.background)
         .focusable()
         .focusEffectDisabled()
@@ -61,19 +61,23 @@ struct ZoomableImageViewer: View {
         HStack {
             Group {
                 Text(title ?? "Photo")
-                    .font(.title2)
+                    .font(.title)
+                    .fontWeight(.semibold)
                 if urls.count > 1 {
                     Text("\(index + 1) / \(urls.count)")
-                        .font(.callout.monospacedDigit())
+                        .font(.body.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
             .fontWeight(.semibold)
             Spacer()
             Button { dismiss() } label: {
-                Image(systemName: "xmark").imageScale(.large)
+                Image(systemName: "xmark")
+                    .resizable()
+                    .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
             .keyboardShortcut(.cancelAction)
         }
         .padding(8)
@@ -145,14 +149,17 @@ struct ZoomableImageViewer: View {
                 .buttonStyle(.plain)
             Text("\(Int((scale * 100).rounded()))%")
                 .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .leading)
             Spacer()
-            Button("Reset") { resetZoom() }
-                .disabled(scale == 1 && offset == .zero)
+            Button { resetZoom() } label: {
+                Text("Reset")
+                    .fontWeight(.semibold)
+            }
+            .frame(height: 44)
+            .disabled(scale == 1 && offset == .zero)
         }
-        .font(.body.monospacedDigit())
         .padding(8)
         .padding(.horizontal)
+        .font(.title)
     }
 
     // MARK: - Gestures

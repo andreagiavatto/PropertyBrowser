@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "certificateNumber": "0001-2222-3333-4444-0001",
+      "addressLine1": "10",
+      "addressLine2": "Acre Lane",
+      "addressLine3": "London",
+      "addressLine4": null,
+      "postcode": "SW2 5SG",
+      "postTown": "LONDON",
+      "council": "Lambeth",
+      "constituency": "Clapham and Brixton Hill",
+      "currentEnergyEfficiencyBand": "D",
+      "registrationDate": "2021-03-11",
+      "uprn": 100021468190
+    },
+    {
+      "certificateNumber": "0002-2222-3333-4444-0002",
+      "addressLine1": "12",
+      "addressLine2": "Acre Lane",
+      "addressLine3": "London",
+      "addressLine4": null,
+      "postcode": "SW2 5SG",
+      "postTown": "LONDON",
+      "council": "Lambeth",
+      "constituency": "Clapham and Brixton Hill",
+      "currentEnergyEfficiencyBand": "C",
+      "registrationDate": "2023-08-02T00:00:00.000+00:00",
+      "uprn": 100021468192
+    },
+    {
+      "certificateNumber": "0003-2222-3333-4444-0003",
+      "addressLine1": "Flat 2",
+      "addressLine2": "5 Brixton Hill",
+      "addressLine3": "London",
+      "addressLine4": null,
+      "postcode": "SW2 1RW",
+      "postTown": "LONDON",
+      "council": "Lambeth",
+      "constituency": "Clapham and Brixton Hill",
+      "currentEnergyEfficiencyBand": "E",
+      "registrationDate": "2019-12-20"
+    }
+  ],
+  "pagination": {
+    "totalRecords": 3,
+    "currentPage": 1,
+    "totalPages": 1,
+    "nextPage": null,
+    "prevPage": null,
+    "pageSize": 5000
+  }
+}

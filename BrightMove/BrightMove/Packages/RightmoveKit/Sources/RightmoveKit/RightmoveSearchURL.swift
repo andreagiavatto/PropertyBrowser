@@ -34,6 +34,7 @@ public struct RightmoveSearchURL: Equatable {
         var items: [URLQueryItem] = [
             URLQueryItem(name: "locationIdentifier", value: criteria.locationIdentifier),
             URLQueryItem(name: "radius", value: criteria.radius.rawValue),
+            URLQueryItem(name: "sortType", value: criteria.sortOrder.rawValue),
         ]
         if let beds = criteria.minBedrooms, !beds.isEmpty {
             items.append(URLQueryItem(name: "minBedrooms", value: beds))
@@ -60,6 +61,7 @@ public struct RightmoveSearchURL: Equatable {
     public var maxBedrooms: String? { value(for: "maxBedrooms") }
     public var minPrice: String? { value(for: "minPrice") }
     public var maxPrice: String? { value(for: "maxPrice") }
+    public var sortType: String? { value(for: "sortType") }
 
     /// Whether the search already includes Under Offer / Sold STC results.
     public var includesSSTC: Bool { value(for: "_includeSSTC") == "on" }

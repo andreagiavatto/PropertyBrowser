@@ -1,0 +1,36 @@
+{
+  "head": { "vars": ["paon", "saon", "street", "price", "date"] },
+  "results": {
+    "bindings": [
+      {
+        "paon": { "type": "literal", "value": "10" },
+        "street": { "type": "literal", "value": "ACRE LANE" },
+        "price": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#integer", "value": "166000" },
+        "date": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#date", "value": "2000-06-30" }
+      },
+      {
+        "paon": { "type": "literal", "value": "10" },
+        "street": { "type": "literal", "value": "ACRE LANE" },
+        "price": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#integer", "value": "550000" },
+        "date": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#date", "value": "2016-09-15" }
+      },
+      {
+        "paon": { "type": "literal", "value": "12" },
+        "street": { "type": "literal", "value": "ACRE LANE" },
+        "price": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#integer", "value": "615000" },
+        "date": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#date", "value": "2018-02-01" }
+      },
+      {
+        "saon": { "type": "literal", "value": "FLAT 2" },
+        "paon": { "type": "literal", "value": "5" },
+        "street": { "type": "literal", "value": "BRIXTON HILL" },
+        "price": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#integer", "value": "300000" },
+        "date": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#date", "value": "2019-11-20" }
+      },
+      {
+        "paon": { "type": "literal", "value": "MISSINGPRICE" },
+        "date": { "type": "typed-literal", "datatype": "http://www.w3.org/2001/XMLSchema#date", "value": "2019-11-20" }
+      }
+    ]
+  }
+}

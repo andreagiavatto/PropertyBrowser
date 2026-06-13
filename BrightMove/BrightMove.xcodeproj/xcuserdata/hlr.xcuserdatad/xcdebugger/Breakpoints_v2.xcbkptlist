@@ -20,51 +20,5 @@
             landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "ED3C0C67-0E66-48CA-A2B0-E15F45219483"
-            shouldBeEnabled = "Yes"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "BrightMove/Packages/RightmoveKit/Sources/RightmoveKit/CivicNumberLookup.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "40"
-            endingLineNumber = "40"
-            landmarkName = "identify(deliveryPointId:encId:propertyID:postcode:soldHistoryClient:landRegistry:)"
-            landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "ED3C0C67-0E66-48CA-A2B0-E15F45219483 - ead2c6ec7bae5739"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(4) suspend resume partial function for static RightmoveKit.CivicNumberLookup.identify(deliveryPointId: Swift.String, encId: Swift.String, propertyID: Swift.Optional&lt;Swift.Int&gt;, postcode: Swift.String, soldHistoryClient: RightmoveKit.SoldHistoryClient, landRegistry: RightmoveKit.LandRegistryClient) async throws -&gt; RightmoveKit.CivicNumberLookup.Result"
-                  moduleName = "BrightMove.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/hlr/Developer/PropertyBrowser/BrightMove/BrightMove/Packages/RightmoveKit/Sources/RightmoveKit/CivicNumberLookup.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "40"
-                  endingLineNumber = "40">
-               </Location>
-               <Location
-                  uuid = "ED3C0C67-0E66-48CA-A2B0-E15F45219483 - f864df3898c6cf2d"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(8) suspend resume partial function for static RightmoveKit.CivicNumberLookup.identify(deliveryPointId: Swift.String, encId: Swift.String, propertyID: Swift.Optional&lt;Swift.Int&gt;, postcode: Swift.String, soldHistoryClient: RightmoveKit.SoldHistoryClient, landRegistry: RightmoveKit.LandRegistryClient) async throws -&gt; RightmoveKit.CivicNumberLookup.Result"
-                  moduleName = "BrightMove.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/hlr/Developer/PropertyBrowser/BrightMove/BrightMove/Packages/RightmoveKit/Sources/RightmoveKit/CivicNumberLookup.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "40"
-                  endingLineNumber = "40">
-               </Location>
-            </Locations>
-         </BreakpointContent>
-      </BreakpointProxy>
    </Breakpoints>
 </Bucket>

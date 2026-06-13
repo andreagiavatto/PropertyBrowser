@@ -27,6 +27,10 @@ struct PropertyDetailView: View {
     @State private var priceHistory: [PriceHistoryEntry] = []
     @State private var isLoadingPriceHistory = false
 
+    // Third-party valuation estimate (L&C, more providers later). Ephemeral —
+    // refetched on reopen, never persisted.
+    @StateObject private var valuationService = ValuationService()
+
     // Floorplan zoom viewer
     @State private var showFloorplanViewer = false
     @State private var floorplanStartIndex = 0
@@ -87,6 +91,12 @@ struct PropertyDetailView: View {
             }
         }
         .task(id: propertyID) { await load() }
+        // Auto-fetch a valuation only once the address is user-confirmed; the key
+        // changes when the confirmed address does, refetching cleanly.
+        .task(id: confirmedValuationKey) {
+            guard confirmedValuationKey != nil, let d = detail else { return }
+            await fetchValuation(d)
+        }
     }
 
     // MARK: - Responsive container
@@ -190,6 +200,11 @@ struct PropertyDetailView: View {
 
             // Full-address resolver (EPC match + Street View confirm)
             section("Full address") { addressResolver(d) }
+
+            // Third-party value estimate — only once we have an address to ask with.
+            if cachedResolution != nil {
+                section("Estimated value") { valuationSection(d) }
+            }
 
             if !priceHistory.isEmpty || isLoadingPriceHistory {
                 section("Price History") {
@@ -695,6 +710,121 @@ struct PropertyDetailView: View {
         isCrossChecking = true
         defer { isCrossChecking = false }
         civicMatch = await AddressResolver.crossCheckCivicNumber(detail: d)
+    }
+
+    // MARK: - Valuation estimate
+
+    /// Key that drives the auto-fetch: non-nil only when the address is
+    /// user-confirmed, so a best-guess never triggers an automatic call.
+    private var confirmedValuationKey: String? {
+        guard let cached = cachedResolution,
+              cached.confirmation == .confirmed,
+              let address = cached.resolvedAddress else { return nil }
+        return "\(address)|\(cached.postcode ?? "")"
+    }
+
+    @ViewBuilder
+    private func valuationSection(_ d: PropertyDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if valuationService.isLoading && valuationService.outcomes.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Fetching estimate…").foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            } else if valuationService.outcomes.isEmpty {
+                // Nothing yet. Confirmed addresses auto-fetch; for a best guess we
+                // wait for the user to ask.
+                Text(cachedResolution?.confirmation == .confirmed
+                     ? "No estimate yet."
+                     : "Confirm an address above, or fetch an estimate for the best guess.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(valuationService.outcomes) { outcome in
+                    valuationRow(outcome, detail: d)
+                }
+            }
+
+            Button {
+                Task { await fetchValuation(d) }
+            } label: {
+                Label(valuationService.outcomes.isEmpty ? "Get estimate" : "Refresh estimate",
+                      systemImage: "sterlingsign.circle")
+            }
+            .font(.callout)
+            .disabled(valuationService.isLoading)
+        }
+    }
+
+    @ViewBuilder
+    private func valuationRow(_ outcome: ValuationOutcome, detail d: PropertyDetail) -> some View {
+        switch outcome {
+        case .estimate(let v):
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("£\(Format.thousands(v.value.mid))")
+                        .font(.title2.bold().monospacedDigit())
+                    if let delta = askingPriceDelta(estimate: v.value.mid, detail: d) {
+                        Text(delta.text)
+                            .font(.callout).foregroundStyle(delta.tint)
+                    }
+                    Spacer()
+                    Text(v.source).font(.caption).foregroundStyle(.tertiary)
+                }
+                Text("Range £\(Format.thousands(v.value.lower)) – £\(Format.thousands(v.value.upper))")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let rent = v.rent {
+                    Text("Est. rent £\(Format.thousands(rent.mid))/mo · £\(Format.thousands(rent.lower)) – £\(Format.thousands(rent.upper))")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+
+        case .failure(let source, let error):
+            // Quiet, labelled unavailability — never loud for a side feature.
+            let message: String = {
+                switch error {
+                case .insufficientInput: return "Needs a confirmed address number to estimate."
+                default:                 return "Estimate unavailable."
+                }
+            }()
+            HStack(spacing: 6) {
+                Image(systemName: "sterlingsign.circle").foregroundStyle(.tertiary)
+                Text("\(source): \(message)").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        }
+    }
+
+    /// "Listed N% above/below estimate" against the listing's asking price, with
+    /// a tint. nil when there's no asking price to compare.
+    private func askingPriceDelta(estimate: Int, detail d: PropertyDetail)
+        -> (text: String, tint: Color)? {
+        guard estimate > 0,
+              let asking = pin?.currentPriceAmount ?? d.prices?.parsedAmount,
+              asking > 0 else { return nil }
+        let pct = Int((Double(asking - estimate) / Double(estimate) * 100).rounded())
+        if pct >= 1 {
+            return ("Listed \(pct)% above estimate", .orange)
+        } else if pct <= -1 {
+            return ("Listed \(abs(pct))% below estimate", .green)
+        } else {
+            return ("Listed in line with estimate", .secondary)
+        }
+    }
+
+    /// Build the query from the resolved address and ask every provider.
+    private func fetchValuation(_ d: PropertyDetail) async {
+        guard let cached = cachedResolution, let address = cached.resolvedAddress else {
+            valuationService.reset()
+            return
+        }
+        let query = ValuationQuery(
+            resolvedAddress: address,
+            postcode: cached.postcode ?? d.address?.fullPostcode
+        )
+        await valuationService.load(query: query)
     }
 
     // MARK: - Section helper

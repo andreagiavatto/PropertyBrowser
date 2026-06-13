@@ -1,0 +1,12 @@
+{
+  "url": "https://integration.landc.co.uk//calculator/houseprice",
+  "body": "{\"SubBuildingName\":\"15\",\"Street\":\"Felmersham Close\",\"Postcode\":\"SW4 7EU\"}",
+  "result": {
+    "PropertyValue": 366177,
+    "ValuationUpper": 437000,
+    "ValuationLower": 296000,
+    "MonthlyRental": 1520,
+    "MonthlyRentalUpper": 1810,
+    "MonthlyRentalLower": 1230
+  }
+}

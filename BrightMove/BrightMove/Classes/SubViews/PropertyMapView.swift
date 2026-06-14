@@ -49,6 +49,9 @@ struct PropertyMapView: NSViewRepresentable {
 
         private var annotationsByID: [Int: PropertyAnnotation] = [:]
         private var boundingOverlay: MKPolygon?
+        /// Popover used to disambiguate a cluster whose members sit on the exact
+        /// same coordinate (zooming can't separate them).
+        private var disambiguationPopover: NSPopover?
         private var lastFitToken: Int = .min
         /// True once the user has panned/zoomed the current result set, which
         /// suppresses auto-fit until the next explicit fit request (new search).
@@ -195,7 +198,13 @@ struct PropertyMapView: NSViewRepresentable {
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             if let cluster = view.annotation as? MKClusterAnnotation {
                 mapView.deselectAnnotation(cluster, animated: false)
-                zoom(to: cluster, in: mapView)
+                // If the members are stacked on (nearly) the same coordinate,
+                // zooming will never break them apart — offer a picker instead.
+                if membersAreCoincident(cluster) {
+                    presentDisambiguation(for: cluster, from: view, in: mapView)
+                } else {
+                    zoom(to: cluster, in: mapView)
+                }
             } else if let property = view.annotation as? PropertyAnnotation {
                 // Rebuild the callout so its closures capture the current state.
                 view.detailCalloutAccessoryView = makeCallout(for: property)
@@ -233,6 +242,51 @@ struct PropertyMapView: NSViewRepresentable {
             isProgrammaticMove = true
             let padding = NSEdgeInsets(top: 60, left: 60, bottom: 60, right: 60)
             mapView.setVisibleMapRect(union, edgePadding: padding, animated: true)
+        }
+
+        /// True when every member of the cluster sits within a few metres of the
+        /// first — i.e. zooming further can't separate them, so we must offer a
+        /// picker rather than try to zoom in.
+        private func membersAreCoincident(_ cluster: MKClusterAnnotation) -> Bool {
+            let coords = cluster.memberAnnotations.map(\.coordinate)
+            guard let first = coords.first else { return false }
+            let reference = CLLocation(latitude: first.latitude, longitude: first.longitude)
+            for coord in coords.dropFirst() {
+                let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                // ~8 m: closer than this and the price capsules overlap at any
+                // zoom level, so MapKit keeps them clustered indefinitely.
+                if reference.distance(from: location) > 8 { return false }
+            }
+            return true
+        }
+
+        /// Show a popover listing the coincident properties so the user can pick
+        /// one even though they share a coordinate.
+        private func presentDisambiguation(for cluster: MKClusterAnnotation,
+                                           from view: MKAnnotationView,
+                                           in mapView: MKMapView) {
+            let members = cluster.memberAnnotations.compactMap { $0 as? PropertyAnnotation }
+            guard !members.isEmpty else { return }
+
+            disambiguationPopover?.close()
+
+            let list = CoincidentPropertiesList(
+                properties: members,
+                pinnedIDs: parent.pinnedIDs,
+                onSelect: { [weak self] id in
+                    self?.disambiguationPopover?.close()
+                    self?.parent.onSelect(id)
+                },
+                onTogglePin: { [weak self] id in
+                    self?.parent.onTogglePin(id)
+                }
+            )
+
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentViewController = NSHostingController(rootView: list)
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
+            disambiguationPopover = popover
         }
     }
 }

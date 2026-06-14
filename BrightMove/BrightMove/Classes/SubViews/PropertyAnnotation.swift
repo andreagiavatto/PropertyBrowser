@@ -130,7 +130,7 @@ private struct PriceCapsule: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .font(.footnote.weight(.bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .foregroundStyle(.white)

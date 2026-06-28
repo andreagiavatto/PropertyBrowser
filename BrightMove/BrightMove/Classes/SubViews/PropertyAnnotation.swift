@@ -16,6 +16,8 @@ final class PropertyAnnotation: NSObject, MKAnnotation {
     let subtype: String?
     let thumbnailURLString: String?
     var isPinned: Bool
+    /// True once the user has opened this property's detail view — greys the pill.
+    var isViewed: Bool
 
     /// Used by MapKit for the (suppressed) default callout title + accessibility.
     var title: String? { address }
@@ -31,7 +33,8 @@ final class PropertyAnnotation: NSObject, MKAnnotation {
         address: String?,
         subtype: String?,
         thumbnailURLString: String?,
-        isPinned: Bool
+        isPinned: Bool,
+        isViewed: Bool
     ) {
         self.propertyID = propertyID
         self.coordinate = coordinate
@@ -43,10 +46,11 @@ final class PropertyAnnotation: NSObject, MKAnnotation {
         self.subtype = subtype
         self.thumbnailURLString = thumbnailURLString
         self.isPinned = isPinned
+        self.isViewed = isViewed
     }
 
     /// Build from a search result, or nil when it has no usable coordinate.
-    convenience init?(search p: SearchProperty, isPinned: Bool) {
+    convenience init?(search p: SearchProperty, isPinned: Bool, isViewed: Bool) {
         guard let id = p.propertyID,
               let lat = p.location?.lat,
               let lng = p.location?.lng else { return nil }
@@ -61,7 +65,8 @@ final class PropertyAnnotation: NSObject, MKAnnotation {
             address: p.displayAddress,
             subtype: p.propertySubType,
             thumbnailURLString: p.propertyImages?.images?.first?.srcUrl,
-            isPinned: isPinned
+            isPinned: isPinned,
+            isViewed: isViewed
         )
     }
 }
@@ -113,7 +118,7 @@ final class PriceCapsuleAnnotationView: MKAnnotationView {
     private func configure() {
         guard let p = annotation as? PropertyAnnotation else { return }
         hosting?.removeFromSuperview()
-        let view = NSHostingView(rootView: PriceCapsule(text: p.shortPrice, pinned: p.isPinned))
+        let view = NSHostingView(rootView: PriceCapsule(text: p.shortPrice, pinned: p.isPinned, viewed: p.isViewed))
         view.frame = CGRect(origin: .zero, size: view.fittingSize)
         addSubview(view)
         hosting = view
@@ -127,6 +132,15 @@ final class PriceCapsuleAnnotationView: MKAnnotationView {
 private struct PriceCapsule: View {
     let text: String
     let pinned: Bool
+    let viewed: Bool
+
+    /// Precedence: pinned (orange) beats viewed (grey) beats unviewed (accent).
+    /// The grey signals "already looked at", so unviewed listings stand out.
+    private var fill: Color {
+        if pinned { return .orange }
+        if viewed { return Color(nsColor: .systemGray) }
+        return .accentColor
+    }
 
     var body: some View {
         Text(text)
@@ -134,9 +148,7 @@ private struct PriceCapsule: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .foregroundStyle(.white)
-            .background(
-                Capsule().fill(pinned ? Color.orange : Color.accentColor)
-            )
+            .background(Capsule().fill(fill))
             .overlay(Capsule().stroke(.white, lineWidth: 1.5))
             .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
     }

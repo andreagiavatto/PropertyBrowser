@@ -7,6 +7,7 @@ struct SearchView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.modelContext) private var context
     @Query private var pins: [PinnedProperty]
+    @Query private var viewed: [ViewedProperty]
 
     /// Pushes a property detail onto the navigation stack owned by `RootView`.
     /// Used by the map callout, which can't use a `NavigationLink`.
@@ -16,6 +17,7 @@ struct SearchView: View {
     @State private var areaFieldHeight: CGFloat = 0
 
     private var pinnedIDs: Set<Int> { Set(pins.map(\.propertyID)) }
+    private var viewedIDs: Set<Int> { Set(viewed.map(\.propertyID)) }
 
     // Bedroom picker options: label -> stored value ("" == any, "0" == studio).
     private let bedroomOptions: [(label: String, value: String)] = [
@@ -156,6 +158,7 @@ struct SearchView: View {
         PropertyMapView(
             properties: mappedResults,
             pinnedIDs: pinnedIDs,
+            viewedIDs: viewedIDs,
             fitToken: model.fitToken,
             fallbackCenter: nil,
             onSelect: { id in onSelectProperty(id) },

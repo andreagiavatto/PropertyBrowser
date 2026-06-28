@@ -82,6 +82,21 @@ public final class PinnedProperty {
     }
 }
 
+/// A property the user has opened the detail view for. Keyed by `propertyID`
+/// so it persists independently of whether the property is pinned, and used to
+/// grey out "already looked at" pills on the map.
+@Model
+public final class ViewedProperty {
+    @Attribute(.unique) public var propertyID: Int
+    /// When the property was most recently opened.
+    public var viewedAt: Date
+
+    public init(propertyID: Int, viewedAt: Date = Date()) {
+        self.propertyID = propertyID
+        self.viewedAt = viewedAt
+    }
+}
+
 /// One entry in a pinned property's history. Append-only.
 @Model
 public final class PropertyEvent {

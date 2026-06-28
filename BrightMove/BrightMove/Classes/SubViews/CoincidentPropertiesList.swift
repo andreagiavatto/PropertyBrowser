@@ -6,6 +6,7 @@ import SwiftUI
 /// pin toggle and a tap-through to the full detail view.
 struct CoincidentPropertiesList: View {
     let properties: [PropertyAnnotation]
+    let viewedIDs: Set<Int>
     let onSelect: (Int) -> Void
     let onTogglePin: (Int) -> Void
 
@@ -14,9 +15,11 @@ struct CoincidentPropertiesList: View {
 
     init(properties: [PropertyAnnotation],
          pinnedIDs: Set<Int>,
+         viewedIDs: Set<Int>,
          onSelect: @escaping (Int) -> Void,
          onTogglePin: @escaping (Int) -> Void) {
         self.properties = properties
+        self.viewedIDs = viewedIDs
         self.onSelect = onSelect
         self.onTogglePin = onTogglePin
         _pinnedIDs = State(initialValue: pinnedIDs)
@@ -49,6 +52,7 @@ struct CoincidentPropertiesList: View {
 
     private func row(for property: PropertyAnnotation) -> some View {
         let isPinned = pinnedIDs.contains(property.propertyID)
+        let isViewed = viewedIDs.contains(property.propertyID)
         return Button {
             onSelect(property.propertyID)
         } label: {
@@ -56,8 +60,16 @@ struct CoincidentPropertiesList: View {
                 thumbnail(for: property)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(property.fullPrice ?? property.shortPrice)
-                        .font(.subheadline.weight(.semibold))
+                    HStack(spacing: 4) {
+                        if isViewed {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .help("Already viewed")
+                        }
+                        Text(property.fullPrice ?? property.shortPrice)
+                            .font(.subheadline.weight(.semibold))
+                    }
                     if let beds = property.beds {
                         Text(specLine(beds: beds, baths: property.baths, subtype: property.subtype))
                             .font(.caption2)

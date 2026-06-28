@@ -55,7 +55,7 @@ final class AppModel {
     private(set) var didCapMapLoad = false
 
     /// Most results the map will auto-load, expressed in pages (24 each).
-    private static let mapPageCap = 10        // ~240 results
+    private static let mapPageCap = 15        // ~360 results
 
     private var mapLoadTask: Task<Void, Never>?
 

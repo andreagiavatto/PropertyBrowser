@@ -71,3 +71,33 @@ extension ListingState {
 func rightmoveURL(forID id: Int) -> URL? {
     URL(string: "https://www.rightmove.co.uk/properties/\(id)")
 }
+
+/// Inverse of `rightmoveURL(forID:)`: pulls the numeric property ID out of a
+/// pasted Rightmove listing URL.
+///
+/// Accepts the canonical `rightmove.co.uk/properties/{id}` shape, tolerant of a
+/// missing scheme, trailing `#/?channel=…` fragments, query params, trailing
+/// slashes, and surrounding whitespace. Returns nil for anything that isn't a
+/// Rightmove property link.
+func rightmovePropertyID(from raw: String) -> Int? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    // URLComponents needs a scheme to parse the host reliably.
+    let withScheme = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+    guard let components = URLComponents(string: withScheme),
+          let host = components.host?.lowercased(),
+          host == "rightmove.co.uk" || host.hasSuffix(".rightmove.co.uk")
+    else { return nil }
+
+    // Find the path segment immediately after "properties" and read its leading
+    // digits (the fragment/query are already split off by URLComponents).
+    let segments = components.path.split(separator: "/").map(String.init)
+    guard let idx = segments.firstIndex(where: { $0.lowercased() == "properties" }),
+          idx + 1 < segments.count
+    else { return nil }
+
+    let digits = segments[idx + 1].prefix { $0.isNumber }
+    guard !digits.isEmpty, let id = Int(digits) else { return nil }
+    return id
+}

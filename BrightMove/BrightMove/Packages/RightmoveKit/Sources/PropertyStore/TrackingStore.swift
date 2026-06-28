@@ -17,12 +17,13 @@ public final class TrackingStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
             for: PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self,
+            ViewedProperty.self,
             configurations: config)
         return TrackingStore(context: ModelContext(container))
     }
 
     public static var schema: [any PersistentModel.Type] {
-        [PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self]
+        [PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self, ViewedProperty.self]
     }
 
     // MARK: Queries
@@ -38,6 +39,20 @@ public final class TrackingStore {
 
     public func allPins() -> [PinnedProperty] {
         let descriptor = FetchDescriptor<PinnedProperty>(sortBy: [SortDescriptor(\.pinnedAt, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    public func viewedProperty(id: Int) -> ViewedProperty? {
+        let descriptor = FetchDescriptor<ViewedProperty>(predicate: #Predicate { $0.propertyID == id })
+        return try? context.fetch(descriptor).first
+    }
+
+    public func isViewed(id: Int) -> Bool {
+        viewedProperty(id: id) != nil
+    }
+
+    public func allViewed() -> [ViewedProperty] {
+        let descriptor = FetchDescriptor<ViewedProperty>(sortBy: [SortDescriptor(\.viewedAt, order: .reverse)])
         return (try? context.fetch(descriptor)) ?? []
     }
 
@@ -71,6 +86,18 @@ public final class TrackingStore {
 
         try? context.save()
         return pin
+    }
+
+    /// Record that the user opened a property's detail view. Idempotent: inserts
+    /// a `ViewedProperty` the first time, otherwise just bumps `viewedAt`. Safe to
+    /// call repeatedly (e.g. on every `onAppear`).
+    public func markViewed(id: Int, at date: Date = Date()) {
+        if let existing = viewedProperty(id: id) {
+            existing.viewedAt = date
+        } else {
+            context.insert(ViewedProperty(propertyID: id, viewedAt: date))
+        }
+        try? context.save()
     }
 
     public func unpin(id: Int) {

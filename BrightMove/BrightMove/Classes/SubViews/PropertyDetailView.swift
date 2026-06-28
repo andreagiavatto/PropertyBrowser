@@ -31,6 +31,10 @@ struct PropertyDetailView: View {
     // refetched on reopen, never persisted.
     @StateObject private var valuationService = ValuationService()
 
+    // Homipi area/property profile (last sold, type/tenure, crime, area stats).
+    // Like the valuation, ephemeral and auto-loaded once the address is confirmed.
+    @StateObject private var homipiService = HomipiService()
+
     // Floorplan zoom viewer
     @State private var showFloorplanViewer = false
     @State private var floorplanStartIndex = 0
@@ -91,11 +95,20 @@ struct PropertyDetailView: View {
             }
         }
         .task(id: propertyID) { await load() }
+        // Record that this listing has been opened, so its map pill greys out.
+        .onAppear { TrackingStore(context: context).markViewed(id: propertyID) }
         // Auto-fetch a valuation only once the address is user-confirmed; the key
         // changes when the confirmed address does, refetching cleanly.
         .task(id: confirmedValuationKey) {
             guard confirmedValuationKey != nil, let d = detail else { return }
             await fetchValuation(d)
+        }
+        // Same gating as the valuation: only load Homipi once the address is
+        // user-confirmed, refetching when the confirmed address changes.
+        .task(id: confirmedValuationKey) {
+            guard confirmedValuationKey != nil, let cached = cachedResolution else { return }
+            await homipiService.load(resolvedAddress: cached.resolvedAddress,
+                                     postcode: cached.postcode ?? detail?.address?.fullPostcode)
         }
     }
 
@@ -204,6 +217,11 @@ struct PropertyDetailView: View {
             // Third-party value estimate — only once we have an address to ask with.
             if cachedResolution != nil {
                 section("Estimated value") { valuationSection(d) }
+            }
+
+            // Homipi area/property profile — appears once there's something to show.
+            if homipiService.isLoading || homipiService.report != nil || homipiService.failed {
+                section("Homipi report") { homipiSection() }
             }
 
             if !priceHistory.isEmpty || isLoadingPriceHistory {
@@ -827,6 +845,112 @@ struct PropertyDetailView: View {
         await valuationService.load(query: query)
     }
 
+    // MARK: - Homipi report
+
+    @ViewBuilder
+    private func homipiSection() -> some View {
+        if homipiService.isLoading && homipiService.report == nil {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.7)
+                Text("Loading Homipi details…").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        } else if let report = homipiService.report {
+            if homipiReportIsEmpty(report) {
+                Text("No additional details from Homipi.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    homipiPropertyFacts(report)
+                    homipiAreaFacts(report)
+                    Link(destination: report.detailURL) {
+                        Label("View full report on Homipi", systemImage: "arrow.up.right.square")
+                    }
+                    .font(.callout)
+                }
+            }
+        } else {
+            // failed
+            HStack(spacing: 6) {
+                Image(systemName: "house.circle").foregroundStyle(.tertiary)
+                Text("\(HomipiReport.source): details unavailable.").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        }
+    }
+
+    /// True when none of the non-price fields we surface carry anything.
+    private func homipiReportIsEmpty(_ r: HomipiReport) -> Bool {
+        r.lastSoldPrice == nil && r.lastSoldDate == nil
+            && r.propertyType == nil && r.tenure == nil
+            && r.crime == nil && r.areaStats.isEmpty
+    }
+
+    /// Property-level facts cluster: last sold, type, tenure.
+    @ViewBuilder
+    private func homipiPropertyFacts(_ r: HomipiReport) -> some View {
+        let lastSold: String? = {
+            switch (r.lastSoldPrice, r.lastSoldDate) {
+            case let (price?, date?): return "£\(Format.thousands(price)) · \(date)"
+            case let (price?, nil):   return "£\(Format.thousands(price))"
+            case let (nil, date?):    return date
+            default:                  return nil
+            }
+        }()
+        let type = [r.propertyType, r.tenure].compactMap { $0 }.joined(separator: " · ")
+
+        if lastSold != nil || !type.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if let lastSold { homipiRow("Last sold", lastSold) }
+                if !type.isEmpty { homipiRow("Property", type) }
+            }
+        }
+    }
+
+    /// Area-level facts cluster: reported crime and Census area statistics.
+    @ViewBuilder
+    private func homipiAreaFacts(_ r: HomipiReport) -> some View {
+        if let crime = r.crime {
+            VStack(alignment: .leading, spacing: 6) {
+                homipiRow("Reported crime",
+                          "\(crime.total) in last month · within \(crime.radiusText)")
+                ForEach(crime.byType) { row in
+                    HStack {
+                        Text(row.type).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(row.count)").monospacedDigit()
+                    }
+                    .font(.footnote)
+                }
+            }
+        }
+
+        if !r.areaStats.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Area (Census 2011)").font(.callout).foregroundStyle(.secondary)
+                ForEach(r.areaStats) { stat in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(stat.area)
+                        Spacer()
+                        Text("Pop. \(stat.population) · \(stat.households) households")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.footnote)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func homipiRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).multilineTextAlignment(.trailing)
+        }
+        .font(.callout)
+    }
+
     // MARK: - Section helper
 
     @ViewBuilder
@@ -873,6 +997,9 @@ struct PropertyDetailView: View {
         floorArea = nil
         renderedDescription = nil
         priceHistory = []
+        // Clear the previous property's Homipi report; the section is gated on
+        // service state, so stale data would otherwise linger until a refetch.
+        homipiService.reset()
 
         do {
             let page = try await model.client.fetchPropertyDetailPage(id: propertyID)

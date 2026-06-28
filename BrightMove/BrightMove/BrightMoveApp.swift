@@ -18,7 +18,8 @@ struct BrightMoveApp: App {
     init() {
         do {
             container = try ModelContainer(
-                for: PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self)
+                for: PinnedProperty.self, PropertyEvent.self, ResolvedAddress.self,
+                ViewedProperty.self)
         } catch {
             fatalError("Failed to create the data store: \(error)")
         }

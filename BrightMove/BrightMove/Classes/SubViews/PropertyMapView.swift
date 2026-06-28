@@ -11,6 +11,8 @@ struct PropertyMapView: NSViewRepresentable {
     /// Mappable search results (caller has already filtered out coordinate-less ones).
     let properties: [SearchProperty]
     let pinnedIDs: Set<Int>
+    /// IDs whose detail view has been opened — drawn as greyed-out pills.
+    let viewedIDs: Set<Int>
     /// Changes to this value request a camera re-fit to the current pins.
     let fitToken: Int
     /// Used to centre the map when there are no mappable results.
@@ -86,15 +88,18 @@ struct PropertyMapView: NSViewRepresentable {
                 guard let id = property.propertyID else { continue }
                 if annotationsByID[id] == nil {
                     if let annot = PropertyAnnotation(search: property,
-                                                      isPinned: parent.pinnedIDs.contains(id)) {
+                                                      isPinned: parent.pinnedIDs.contains(id),
+                                                      isViewed: parent.viewedIDs.contains(id)) {
                         annotationsByID[id] = annot
                         added.append(annot)
                     }
                 } else if let annot = annotationsByID[id] {
-                    // Refresh pinned state on a property already on the map.
+                    // Refresh pinned/viewed state on a property already on the map.
                     let nowPinned = parent.pinnedIDs.contains(id)
-                    if annot.isPinned != nowPinned {
+                    let nowViewed = parent.viewedIDs.contains(id)
+                    if annot.isPinned != nowPinned || annot.isViewed != nowViewed {
                         annot.isPinned = nowPinned
+                        annot.isViewed = nowViewed
                         if let view = mapView.view(for: annot) {
                             view.annotation = annot   // retrigger configure()
                         }
@@ -273,6 +278,7 @@ struct PropertyMapView: NSViewRepresentable {
             let list = CoincidentPropertiesList(
                 properties: members,
                 pinnedIDs: parent.pinnedIDs,
+                viewedIDs: parent.viewedIDs,
                 onSelect: { [weak self] id in
                     self?.disambiguationPopover?.close()
                     self?.parent.onSelect(id)

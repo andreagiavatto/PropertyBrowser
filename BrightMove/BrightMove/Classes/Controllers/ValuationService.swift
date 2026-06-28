@@ -32,7 +32,12 @@ final class ValuationService: ObservableObject {
 
     private let providers: [ValuationProvider]
 
-    /// L&C is the only provider today; add conformers here to stack more.
+    /// Providers stack as rows in the estimate section. Homipi is intentionally
+    /// NOT registered here: the detail view already fetches its postcode page once
+    /// via `HomipiService`, so the estimate row is derived from that single report
+    /// rather than a second, independent fetch — running both hammered Homipi and
+    /// got the duplicate request rate-limited. `HomipiValuationProvider` remains
+    /// available for contexts without a `HomipiService` (none today).
     init(providers: [ValuationProvider] = [LandCValuationClient()]) {
         self.providers = providers
     }

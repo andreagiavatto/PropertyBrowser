@@ -741,6 +741,16 @@ struct PropertyDetailView: View {
         return "\(address)|\(cached.postcode ?? "")"
     }
 
+    /// Homipi's estimate as a `Valuation` row, reusing the report the "Homipi
+    /// report" section already fetched (no separate valuation request — a second
+    /// fetch of the same postcode page just gets rate-limited). nil until the
+    /// report arrives or when Homipi gave no figure.
+    private var homipiValuation: Valuation? {
+        homipiService.report?.valueRange.map {
+            Valuation(source: HomipiReport.source, value: $0, rent: nil)
+        }
+    }
+
     @ViewBuilder
     private func valuationSection(_ d: PropertyDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -750,7 +760,7 @@ struct PropertyDetailView: View {
                     Text("Fetching estimate…").foregroundStyle(.secondary)
                 }
                 .font(.callout)
-            } else if valuationService.outcomes.isEmpty {
+            } else if valuationService.outcomes.isEmpty && homipiValuation == nil {
                 // Nothing yet. Confirmed addresses auto-fetch; for a best guess we
                 // wait for the user to ask.
                 Text(cachedResolution?.confirmation == .confirmed
@@ -761,16 +771,21 @@ struct PropertyDetailView: View {
                 ForEach(valuationService.outcomes) { outcome in
                     valuationRow(outcome, detail: d)
                 }
+                // Homipi's figure, sourced from the single report the section
+                // already loaded rather than a duplicate fetch.
+                if let v = homipiValuation {
+                    valuationRow(.estimate(v), detail: d)
+                }
             }
 
-            Button {
-                Task { await fetchValuation(d) }
-            } label: {
-                Label(valuationService.outcomes.isEmpty ? "Get estimate" : "Refresh estimate",
-                      systemImage: "sterlingsign.circle")
-            }
-            .font(.callout)
-            .disabled(valuationService.isLoading)
+//            Button {
+//                Task { await fetchValuation(d) }
+//            } label: {
+//                Label(valuationService.outcomes.isEmpty ? "Get estimate" : "Refresh estimate",
+//                      systemImage: "sterlingsign.circle")
+//            }
+//            .font(.callout)
+//            .disabled(valuationService.isLoading)
         }
     }
 
@@ -854,11 +869,11 @@ struct PropertyDetailView: View {
                 ProgressView().scaleEffect(0.7)
                 Text("Loading Homipi details…").foregroundStyle(.secondary)
             }
-            .font(.callout)
+            .font(.body)
         } else if let report = homipiService.report {
             if homipiReportIsEmpty(report) {
                 Text("No additional details from Homipi.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.body).foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     homipiPropertyFacts(report)
@@ -866,7 +881,7 @@ struct PropertyDetailView: View {
                     Link(destination: report.detailURL) {
                         Label("View full report on Homipi", systemImage: "arrow.up.right.square")
                     }
-                    .font(.callout)
+                    .font(.body)
                 }
             }
         } else {
@@ -875,7 +890,7 @@ struct PropertyDetailView: View {
                 Image(systemName: "house.circle").foregroundStyle(.tertiary)
                 Text("\(HomipiReport.source): details unavailable.").foregroundStyle(.secondary)
             }
-            .font(.callout)
+            .font(.body)
         }
     }
 
@@ -904,6 +919,7 @@ struct PropertyDetailView: View {
                 if let lastSold { homipiRow("Last sold", lastSold) }
                 if !type.isEmpty { homipiRow("Property", type) }
             }
+            .foregroundStyle(.primary)
         }
     }
 
@@ -914,31 +930,33 @@ struct PropertyDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 homipiRow("Reported crime",
                           "\(crime.total) in last month · within \(crime.radiusText)")
+                .font(.headline)
+                .foregroundStyle(.primary)
                 ForEach(crime.byType) { row in
                     HStack {
                         Text(row.type).foregroundStyle(.secondary)
                         Spacer()
                         Text("\(row.count)").monospacedDigit()
                     }
-                    .font(.footnote)
+                    .font(.callout)
                 }
             }
         }
 
-        if !r.areaStats.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Area (Census 2011)").font(.callout).foregroundStyle(.secondary)
-                ForEach(r.areaStats) { stat in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(stat.area)
-                        Spacer()
-                        Text("Pop. \(stat.population) · \(stat.households) households")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.footnote)
-                }
-            }
-        }
+//        if !r.areaStats.isEmpty {
+//            VStack(alignment: .leading, spacing: 6) {
+//                Text("Area (Census 2011)").font(.callout).foregroundStyle(.secondary)
+//                ForEach(r.areaStats) { stat in
+//                    HStack(alignment: .firstTextBaseline) {
+//                        Text(stat.area)
+//                        Spacer()
+//                        Text("Pop. \(stat.population) · \(stat.households) households")
+//                            .foregroundStyle(.secondary)
+//                    }
+//                    .font(.footnote)
+//                }
+//            }
+//        }
     }
 
     @ViewBuilder
@@ -948,7 +966,7 @@ struct PropertyDetailView: View {
             Spacer()
             Text(value).multilineTextAlignment(.trailing)
         }
-        .font(.callout)
+        .font(.body)
     }
 
     // MARK: - Section helper

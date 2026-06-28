@@ -141,28 +141,26 @@ public struct HomipiValuationProvider: ValuationProvider {
     }
 
     public func estimate(for query: ValuationQuery) async throws -> Valuation {
-        throw RightmoveParseError.markerNotFound("")
-//        let address = query.singleLine ?? Self.recompose(query)
-//        guard let address, query.postcode?.isEmpty == false else {
-//            throw ValuationError.insufficientInput
-//        }
-//
-//        let report: HomipiReport
-//        do {
-//            report = try await client.fetchReport(resolvedAddress: address,
-//                                                  postcode: query.postcode)
-//        } catch let e as HomipiError {
-//            switch e {
-//            case .insufficientInput:      throw ValuationError.insufficientInput
-//            case .notFound, .parse:       throw ValuationError.noEstimate
-//            case .challenged(let m):      throw ValuationError.network("Homipi unavailable (\(m)).")
-//            case .network(let m):         throw ValuationError.network(m)
-//            }
-//        }
-//
-//        guard let range = report.valueRange else { throw ValuationError.noEstimate }
-//        return Valuation(source: source, value: range, rent: nil,
-//                         confidence: report.confidence)
+        guard let address = Self.recompose(query),
+              query.postcode?.isEmpty == false else {
+            throw ValuationError.insufficientInput
+        }
+
+        let report: HomipiReport
+        do {
+            report = try await client.fetchReport(resolvedAddress: address,
+                                                  postcode: query.postcode)
+        } catch let e as HomipiError {
+            switch e {
+            case .insufficientInput: throw ValuationError.insufficientInput
+            case .notFound, .parse:  throw ValuationError.noEstimate
+            case .challenged(let m): throw ValuationError.network("Homipi unavailable (\(m)).")
+            case .network(let m):    throw ValuationError.network(m)
+            }
+        }
+
+        guard let range = report.valueRange else { throw ValuationError.noEstimate }
+        return Valuation(source: source, value: range, rent: nil)
     }
 
     /// Rebuild a single-line address from the decomposed query when the original
